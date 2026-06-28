@@ -1,3 +1,323 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* ── Brutalist tokens ───────────────────────────────────────────── */
+
+@theme {
+  --font-display: "Bebas Neue", sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+
+  --color-ink: #000000;
+  --color-paper: #ffffff;
+  --color-muted: #666666;
+  --color-rule: #000000;
+
+  --ease-brutal: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+  --space-32: 8rem;
+  --space-40: 10rem;
+  --space-48: 12rem;
+
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-section: clamp(3rem, 10vw, 8rem);
+
+  --border-heavy: 3px solid var(--color-rule);
+  --max-shell: 88rem;
+}
+
+/* ── Base ────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--color-ink);
+  background: var(--color-paper);
+  min-height: 100dvh;
+  cursor: none;
+}
+
+::selection {
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ── Dual-layer architecture ───────────────────────────────────── */
+
+.app {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  background: var(--color-paper);
+}
+
+.canvas-layer {
+  opacity: 0.42;
+}
+
+.canvas-layer canvas {
+  display: block;
+}
+
+.dom-layer {
+  position: relative;
+  z-index: 10;
+  isolation: isolate;
+  min-height: 100dvh;
+}
+
+.shell {
+  width: 100%;
+  max-width: var(--max-shell);
+  margin-inline: auto;
+  padding-inline: var(--space-6);
+}
+
+@media (min-width: 768px) {
+  .shell {
+    padding-inline: var(--space-10);
+  }
+}
+
+/* ── Custom cursor ───────────────────────────────────────────────── */
+
+.cursor,
+.cursor-ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  pointer-events: none;
+  border-radius: 50%;
+  will-change: transform;
+}
+
+.cursor {
+  width: 8px;
+  height: 8px;
+  background: var(--color-ink);
+}
+
+.cursor-ring {
+  width: 52px;
+  height: 52px;
+  border: var(--border-heavy);
+  background: transparent;
+}
+
+/* ── Typography ────────────────────────────────────────────────── */
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.heading-hero {
+  margin: 0;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+
+.heading-section {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-section);
+  font-weight: 400;
+  line-height: 0.85;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  color: var(--color-ink);
+}
+
+.body-sm {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.65;
+  color: var(--color-muted);
+  max-width: 48ch;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+/* ── Links ───────────────────────────────────────────────────────── */
+
+.link-accent {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--color-ink);
+  border: var(--border-heavy);
+  padding: var(--space-4) var(--space-6);
+}
+
+.link-accent__arrow {
+  font-size: 1.1em;
+}
+
+.link-muted {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+/* ── Hero ────────────────────────────────────────────────────────── */
+
+.hero {
+  border-bottom: var(--border-heavy);
+}
+
+.hero__line-mask {
+  display: block;
+  overflow: hidden;
+}
+
+.hero__line {
+  display: block;
+  will-change: transform, opacity;
+}
+
+.hero__cta {
+  margin-top: var(--space-12);
+  align-self: flex-start;
+}
+
+
+/* ── Work / case studies ─────────────────────────────────────────── */
+
+.work {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-32);
+  padding-block: var(--space-32) var(--space-40);
+}
+
+.work__index {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: var(--space-6);
+  border-bottom: var(--border-heavy);
+}
+
+.project-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-6);
+  padding-block: var(--space-12);
+  border-bottom: var(--border-heavy);
+}
+
+@media (min-width: 768px) {
+  .project-row {
+    grid-template-columns: minmax(10rem, 14rem) 1fr;
+    grid-template-rows: auto auto auto;
+    column-gap: var(--space-10);
+    row-gap: var(--space-4);
+    padding-block: var(--space-16);
+  }
+
+  .project-row__title {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .project-row__copy {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .project-row__frame {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+}
+
+.project-row__meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.project-row__frame {
+  width: 100%;
+  min-height: clamp(14rem, 42vw, 28rem);
+  border: var(--border-heavy);
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: var(--space-6);
+  background:
+    linear-gradient(180deg, rgb(0 0 0 / 0.02) 0%, rgb(0 0 0 / 0.06) 100%),
+    var(--color-paper);
+}
+
+.project-row__frame-label {
+  color: var(--color-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body {
+    cursor: auto;
+  }
+
+  .cursor,
+  .cursor-ring {
+    display: none;
+  }
+}
