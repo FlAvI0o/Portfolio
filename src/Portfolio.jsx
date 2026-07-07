@@ -77,6 +77,7 @@ export default function Portfolio() {
   const cursorRef = useRef(null);
   const cursorRingRef = useRef(null);
   const scrollProgressRef = useRef(0);
+  const footerProgressRef = useRef(0);
   const lightweightCanvasRef = useRef(false);
 
   useGSAP(
@@ -279,6 +280,16 @@ export default function Portfolio() {
       const footer = footerRef.current;
       if (!footer) return;
 
+      const footerProgressTrigger = ScrollTrigger.create({
+        trigger: footer,
+        start: 'top 92%',
+        end: 'top 18%',
+        scrub: 0.45,
+        onUpdate: (self) => {
+          footerProgressRef.current = self.progress;
+        },
+      });
+
       const headline = footer.querySelector('.footer__headline');
       const cta = footer.querySelector('.footer__cta');
       const logo = footer.querySelector('.footer__logo');
@@ -366,6 +377,8 @@ export default function Portfolio() {
       window.addEventListener('resize', onResize);
 
       return () => {
+        footerProgressTrigger.kill();
+        footerProgressRef.current = 0;
         window.removeEventListener('resize', onResize);
         mm.revert();
       };
@@ -383,6 +396,7 @@ export default function Portfolio() {
         >
           <BackgroundScene
             scrollProgressRef={scrollProgressRef}
+            footerProgressRef={footerProgressRef}
             lightweightModeRef={lightweightCanvasRef}
           />
         </Canvas>
