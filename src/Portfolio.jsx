@@ -79,6 +79,8 @@ export default function Portfolio() {
   const cursorRingRef = useRef(null);
   const scrollProgressRef = useRef(0);
   const footerProgressRef = useRef(0);
+  const profileProgressRef = useRef(0);
+  const profileTriggerRef = useRef(null);
   const lightweightCanvasRef = useRef(false);
 
   useGSAP(
@@ -126,6 +128,16 @@ export default function Portfolio() {
         },
       });
 
+      const profileProgressTrigger = ScrollTrigger.create({
+        trigger: profileTriggerRef.current,
+        start: 'top 35%',
+        end: 'bottom 65%',
+        scrub: true,
+        onUpdate: (self) => {
+          profileProgressRef.current = self.progress;
+        },
+      });
+
       const onResize = () => {
         ScrollTrigger.refresh();
       };
@@ -150,6 +162,8 @@ export default function Portfolio() {
         canvasMm.revert();
         gsap.ticker.remove(onTick);
         progressTrigger.kill();
+        profileProgressTrigger.kill();
+        profileProgressRef.current = 0;
         lenis.destroy();
         html.classList.remove('lenis', 'lenis-smooth', 'lenis-scrolling');
         ScrollTrigger.scrollerProxy(document.documentElement, {});
@@ -407,6 +421,57 @@ export default function Portfolio() {
     { scope: appRef },
   );
 
+  useGSAP(
+    () => {
+      const profile = profileTriggerRef.current;
+      if (!profile) return;
+
+      const leftText = profile.querySelector('.profile-text-left');
+      const rightText = profile.querySelector('.profile-text-right');
+      if (!leftText || !rightText) return;
+
+      const mm = gsap.matchMedia();
+
+      mm.add('(prefers-reduced-motion: reduce)', () => {
+        gsap.set([leftText, rightText], { opacity: 1 });
+      });
+
+      mm.add('(prefers-reduced-motion: no-preference)', () => {
+        const textTrigger = ScrollTrigger.create({
+          trigger: profile,
+          start: 'top 35%',
+          end: 'bottom 65%',
+          scrub: true,
+          onUpdate: (self) => {
+            const progress = self.progress;
+            let opacity = 0;
+
+            if (progress > 0 && progress < 1) {
+              if (progress < 0.25) {
+                opacity = progress / 0.25;
+              } else if (progress > 0.75) {
+                opacity = (1 - progress) / 0.25;
+              } else {
+                opacity = 1;
+              }
+            }
+
+            gsap.set([leftText, rightText], { opacity });
+          },
+        });
+
+        return () => {
+          textTrigger.kill();
+        };
+      });
+
+      return () => {
+        mm.revert();
+      };
+    },
+    { scope: appRef },
+  );
+
   return (
     <div ref={appRef} className="app w-full overflow-x-clip">
       {/* LAYER BACKGROUNDS 
@@ -424,12 +489,13 @@ export default function Portfolio() {
       <div className="canvas-layer fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: -10 }} aria-hidden="true">
         <Canvas
           camera={{ position: [0, 0, 6], fov: 42 }}
-          dpr={[1, 1.75]}
+          dpr={[1, 1.5]} // Cap DPR on Super Retina — fewer pixels, stable frame rate
           gl={{ antialias: true, alpha: true }}
         >
           <BackgroundScene
             scrollProgressRef={scrollProgressRef}
             footerProgressRef={footerProgressRef}
+            profileProgressRef={profileProgressRef}
             lightweightModeRef={lightweightCanvasRef}
           />
         </Canvas>
@@ -459,40 +525,85 @@ export default function Portfolio() {
           </h1>
         </header>
 
+        <section
+          ref={profileTriggerRef}
+          className="relative flex min-h-[120dvh] w-full items-center justify-between px-[clamp(2rem,6vw,6rem)] select-none"
+        >
+          <div className="profile-text-left max-w-[250px] font-mono text-xs uppercase tracking-wider text-black opacity-0">
+              <p className="mb-2 font-bold">// HIGH-END WEBGL DEVELOPMENT</p>
+            <p>
+              High-end webgl development. Interactive 3d products with react three fiber & gsap.
+            </p>
+          </div>
+
+          <div className="pointer-events-none h-full w-1/3" aria-hidden="true" />
+
+          <div className="profile-text-right max-w-[250px] text-right font-mono text-xs uppercase tracking-wider text-black opacity-0">
+            <p className="mb-2 font-bold">// BESPOKE PRODUCTS</p>
+            <p>
+              Bespoke products.
+            </p>
+          </div>
+        </section>
+
         <div className="shell">
-          <main className="work">
+          <section id="work" className="work">
             <div className="work__index">
               <span className="label">Selected case studies</span>
               <span className="label">01 — 02</span>
             </div>
 
-            {PROJECTS.map((project, index) => (
-              <article key={project.id} className="project-row" data-project={project.id}>
-                <div className="project-row__meta">
-                  <span className="label">0{index + 1}</span>
-                  <span className="label">{project.tag}</span>
-                </div>
+            <article className="project-row" data-project={PROJECTS[0].id}>
+              <div className="project-row__meta">
+                <span className="label">01</span>
+                <span className="label">{PROJECTS[0].tag}</span>
+              </div>
 
-                <h2 className="heading-section project-row__title">{project.title}</h2>
+              <h2 className="heading-section project-row__title">{PROJECTS[0].title}</h2>
 
-                <p className="body-sm project-row__copy">{project.description}</p>
+              <p className="body-sm project-row__copy">{PROJECTS[0].description}</p>
 
-                <div className="project-row__frame" data-hover-reveal={project.id}>
-                  <span className="label project-row__frame-label">
-                    [{project.id}.webgl — hover reveal]
-                  </span>
-                </div>
-              </article>
-            ))}
-          </main>
+              <div className="project-row__frame" data-hover-reveal={PROJECTS[0].id}>
+                <span className="label project-row__frame-label">
+                  [{PROJECTS[0].id}.webgl — hover reveal]
+                </span>
+              </div>
+            </article>
+          </section>
         </div>
+
+        <div className="shell">
+          <section className="work">
+            <article className="project-row" data-project={PROJECTS[1].id}>
+              <div className="project-row__meta">
+                <span className="label">02</span>
+                <span className="label">{PROJECTS[1].tag}</span>
+              </div>
+
+              <h2 className="heading-section project-row__title">{PROJECTS[1].title}</h2>
+
+              <p className="body-sm project-row__copy">{PROJECTS[1].description}</p>
+
+              <div className="project-row__frame" data-hover-reveal={PROJECTS[1].id}>
+                <span className="label project-row__frame-label">
+                  [{PROJECTS[1].id}.webgl — hover reveal]
+                </span>
+              </div>
+            </article>
+          </section>
+        </div>
+
+        <section
+          className="transition-cube relative min-h-[100dvh] w-full"
+          aria-label="3D cluster transition"
+        />
 
         {/* FOOTER SENZA BG-WHITE 
           Ora è trasparente. Lo sfondo bianco che vediamo è il div animato dietro il Canvas.
         */}
         <footer
           ref={footerRef}
-          className="relative flex min-h-screen w-full max-w-full flex-col justify-between overflow-x-clip px-[clamp(1.5rem,4vw,4rem)] py-[clamp(3rem,8vw,8rem)] font-sans text-black"
+          className="relative flex h-[100dvh] w-full max-w-full flex-col justify-between overflow-x-clip px-[clamp(1.5rem,4vw,4rem)] py-[clamp(2rem,5vw,4rem)] font-sans text-black"
         >
           <div className="flex w-full flex-col gap-[clamp(2rem,5vw,4rem)] xl:flex-row xl:items-start xl:justify-between">
             <div className="flex w-full flex-col items-start gap-[clamp(1.5rem,3vw,2.5rem)] xl:w-[58%] xl:shrink-0">

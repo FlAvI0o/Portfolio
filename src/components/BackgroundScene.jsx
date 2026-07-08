@@ -1,10 +1,19 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useFrame, useLoader, useThree } from '@react-three/fiber';
+import gsap from 'gsap';
 import * as THREE from 'three';
 
 const DESKTOP_COUNT = 800;
 const MOBILE_COUNT = 100;
 const LINE_COLOR = '#111111';
+const HERO_ACCENT_COLOR = '#ffffff';
+const CANVAS_BG_BLEND = 0.42;
+const PROFILE_SCREEN_HEIGHT_FRACTION = 0.36;
+const PROFILE_SCREEN_HEIGHT_FRACTION_MOBILE = 0.32;
+
+const _heroColorBase = new THREE.Color(LINE_COLOR);
+const _heroColorAccent = new THREE.Color(HERO_ACCENT_COLOR);
+const _heroWorldPos = new THREE.Vector3();
 
 const _dummy = new THREE.Object3D();
 const _a = new THREE.Vector3();
@@ -112,18 +121,192 @@ function easeOutCubic(t) {
   return 1 - (1 - t) ** 3;
 }
 
+function resolveProfilePhase(progress) {
+  let cubeGrowT = 0;
+  let photoFadeT = 0;
+
+  if (progress <= 0 || progress >= 1) {
+    return { cubeGrowT, photoFadeT, active: false };
+  }
+
+  if (progress < 0.25) {
+    const enterP = progress / 0.25;
+    cubeGrowT = clamp01(enterP / 0.72);
+    photoFadeT = clamp01((enterP - 0.5) / 0.5);
+  } else if (progress > 0.75) {
+    const exitP = (1 - progress) / 0.25;
+    photoFadeT = clamp01(exitP / 0.42);
+    cubeGrowT = clamp01((exitP - 0.38) / 0.62);
+  } else {
+    cubeGrowT = 1;
+    photoFadeT = 1;
+  }
+
+  return {
+    cubeGrowT,
+    photoFadeT,
+    active: cubeGrowT > 0.001 || photoFadeT > 0.001,
+  };
+}
+
+function resolveMaxProfileHeroScale(camera, heroObject, isLightweight) {
+  heroObject.getWorldPosition(_heroWorldPos);
+  const dist = camera.position.distanceTo(_heroWorldPos);
+  const fovRad = (camera.fov * Math.PI) / 180;
+  const visibleHeight = 2 * Math.tan(fovRad / 2) * dist;
+  const screenFraction = isLightweight
+    ? PROFILE_SCREEN_HEIGHT_FRACTION_MOBILE
+    : PROFILE_SCREEN_HEIGHT_FRACTION;
+  const maxPhotoWorldHeight = visibleHeight * screenFraction;
+  const scaleFromViewport = maxPhotoWorldHeight / PROFILE_PLANE_HEIGHT;
+  const hardCap = isLightweight ? 1.28 : 1.48;
+
+  return THREE.MathUtils.clamp(scaleFromViewport, 0.5, hardCap);
+}
+
+// Parsed once at module load — avoids per-frame/render allocation inside useFrame
+const power4Out = gsap.parseEase('power4.out');
+
+const PROFILE_PLANE_HEIGHT = 1.4;
+
+function buildProfilePlaneGeometry(width = PROFILE_PLANE_HEIGHT, height = PROFILE_PLANE_HEIGHT) {
+  return new THREE.PlaneGeometry(width, height);
+}
+
+function buildProfileWireGeometry(width = PROFILE_PLANE_HEIGHT, height = PROFILE_PLANE_HEIGHT) {
+  const plane = new THREE.PlaneGeometry(width, height);
+  const edges = new THREE.EdgesGeometry(plane);
+  plane.dispose();
+  return edges;
+}
+
+function resizeProfileGeometries(planeGeometry, wireGeometry, imageAspect) {
+  const height = PROFILE_PLANE_HEIGHT;
+  const width = height * imageAspect;
+  planeGeometry.dispose();
+  wireGeometry.dispose();
+  return {
+    plane: buildProfilePlaneGeometry(width, height),
+    wire: buildProfileWireGeometry(width, height),
+  };
+}
+
+function buildShadowTexture() {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, 'rgba(0,0,0,0.6)');
+  gradient.addColorStop(0.55, 'rgba(0,0,0,0.18)');
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function ProfileReveal({
+  profileGroupRef,
+  profileShadowRef,
+  profileMeshRef,
+  profileWireRef,
+  profileShadowMaterial,
+  profileMaterial,
+  profileWireMaterial,
+}) {
+  const { gl } = useThree();
+  const profilePlaneGeometryRef = useRef(null);
+  const profileWireGeometryRef = useRef(null);
+  if (!profilePlaneGeometryRef.current) profilePlaneGeometryRef.current = buildProfilePlaneGeometry();
+  if (!profileWireGeometryRef.current) profileWireGeometryRef.current = buildProfileWireGeometry();
+
+  const texture = useLoader(THREE.TextureLoader, '/foto1.webp');
+  texture.colorSpace = THREE.SRGBColorSpace;
+
+  useLayoutEffect(() => {
+    texture.anisotropy = gl.capabilities.getMaxAnisotropy();
+    texture.needsUpdate = true;
+  }, [gl, texture]);
+
+  useEffect(() => {
+    profileMaterial.map = texture;
+    profileMaterial.needsUpdate = true;
+  }, [profileMaterial, texture]);
+
+  useLayoutEffect(() => {
+    const image = texture.image;
+    if (!image?.width || !image?.height) return;
+
+    const imageAspect = image.width / image.height;
+    const { plane, wire } = resizeProfileGeometries(
+      profilePlaneGeometryRef.current,
+      profileWireGeometryRef.current,
+      imageAspect,
+    );
+
+    profilePlaneGeometryRef.current = plane;
+    profileWireGeometryRef.current = wire;
+
+    const assignGeometry = (mesh, geometry) => {
+      if (!mesh) return;
+      mesh.geometry = geometry;
+    };
+
+    assignGeometry(profileMeshRef.current, plane);
+    assignGeometry(profileShadowRef.current, plane);
+    assignGeometry(profileWireRef.current, wire);
+  }, [texture, profileMeshRef, profileShadowRef, profileWireRef]);
+
+  return (
+    <group ref={profileGroupRef} visible={false} renderOrder={100}>
+      <mesh
+        ref={profileShadowRef}
+        geometry={profilePlaneGeometryRef.current}
+        material={profileShadowMaterial}
+        position={[0.06, -0.14, -0.04]}
+        renderOrder={100}
+        frustumCulled={false}
+      />
+      <mesh
+        ref={profileMeshRef}
+        geometry={profilePlaneGeometryRef.current}
+        material={profileMaterial}
+        renderOrder={101}
+        frustumCulled={false}
+      />
+      <lineSegments
+        ref={profileWireRef}
+        geometry={profileWireGeometryRef.current}
+        material={profileWireMaterial}
+        renderOrder={102}
+        frustumCulled={false}
+      />
+    </group>
+  );
+}
+
 export default function BackgroundScene({
   scrollProgressRef,
   footerProgressRef,
+  profileProgressRef,
   lightweightModeRef,
 }) {
   const groupRef = useRef(null);
   const instancedMeshRef = useRef(null);
   const heroRef = useRef(null);
+  const profileGroupRef = useRef(null);
+  const profileShadowRef = useRef(null);
+  const profileMeshRef = useRef(null);
+  const profileWireRef = useRef(null);
   const smoothFooterRef = useRef(0);
   const [instanceCount, setInstanceCount] = useState(() => resolveInstanceCount(lightweightModeRef));
 
   const unitEdges = useMemo(() => buildUnitEdgeGeometry(), []);
+  const profileShadowTexture = useMemo(() => buildShadowTexture(), []);
   const clusterMaterial = useMemo(
     () =>
       new THREE.LineBasicMaterial({
@@ -131,6 +314,7 @@ export default function BackgroundScene({
         toneMapped: false,
         transparent: true,
         opacity: 1,
+        depthWrite: false,
       }),
     [],
   );
@@ -141,6 +325,43 @@ export default function BackgroundScene({
         toneMapped: false,
         transparent: true,
         opacity: 1,
+        depthWrite: false,
+      }),
+    [],
+  );
+  const profileShadowMaterial = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        map: profileShadowTexture,
+        toneMapped: false,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        depthTest: false,
+      }),
+    [profileShadowTexture],
+  );
+  const profileMaterial = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        color: '#ffffff',
+        toneMapped: false,
+        transparent: true,
+        opacity: 1,
+        depthWrite: false,
+        depthTest: false,
+      }),
+    [],
+  );
+  const profileWireMaterial = useMemo(
+    () =>
+      new THREE.LineBasicMaterial({
+        color: LINE_COLOR,
+        toneMapped: false,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        depthTest: false,
       }),
     [],
   );
@@ -186,21 +407,12 @@ export default function BackgroundScene({
     mesh.geometry.computeBoundingSphere();
   }, [instanceCount, unitEdges]);
 
-  useEffect(
-    () => () => {
-      unitEdges.dispose();
-      clusterMaterial.dispose();
-      heroMaterial.dispose();
-      instancedMeshRef.current?.geometry.dispose();
-    },
-    [unitEdges, clusterMaterial, heroMaterial],
-  );
-
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     const group = groupRef.current;
     const hero = heroRef.current;
     if (!group || !hero || !scrollProgressRef) return;
 
+    const { camera } = state;
     const t = scrollProgressRef.current;
     const footerTarget = footerProgressRef
       ? footerProgressRef.current
@@ -218,15 +430,30 @@ export default function BackgroundScene({
     const preFooter = 1 - footerReveal;
     const isLightweight = lightweightModeRef?.current;
 
+    let cubeGrowT = 0;
+    let photoFadeT = 0;
+    let profileActive = false;
+
+    if (profileProgressRef) {
+      const p = profileProgressRef.current;
+      const phase = resolveProfilePhase(p);
+      cubeGrowT = phase.cubeGrowT;
+      photoFadeT = phase.photoFadeT;
+      profileActive = phase.active;
+    }
+
+    const cubeEased = power4Out(cubeGrowT);
+    const photoEased = power4Out(photoFadeT);
+
     const clusterRotBlend = 0.12 + preFooter * 0.88;
     group.rotation.y = t * Math.PI * 0.38 * clusterRotBlend;
     group.rotation.x = (t * 0.2 - 0.06) * (0.18 + preFooter * 0.82);
     group.position.y = t * 0.52 - 0.18 - footerEased * 0.42;
     group.position.x = (t - 0.5) * 0.32 * (0.25 + preFooter * 0.75);
     group.position.z = t * -2 - footerEased * 3.2;
-    clusterMaterial.opacity = 1 - easeOutCubic(footerReveal) * 0.92;
+    clusterMaterial.opacity = (1 - easeOutCubic(footerReveal) * 0.92) * CANVAS_BG_BLEND;
 
-    const rotationDamp = preFooter * preFooter;
+    const rotationDamp = preFooter * preFooter * (1 - cubeEased);
     hero.rotation.x = t * Math.PI * 1.5 * rotationDamp + footerEased * 0.38;
     hero.rotation.y = t * Math.PI * 2 * rotationDamp + footerEased * 0.24;
     hero.rotation.z = footerEased * 0.06;
@@ -237,28 +464,87 @@ export default function BackgroundScene({
 
     const heroBase = 0.5;
     const heroPeak = isLightweight ? 8.5 : 13.5;
-    const footerProgress = footerReveal;
-    const scaleT =
-      footerProgress > 0.6 ? (footerProgress - 0.6) / 0.4 : 0;
-    const scaleEased = Math.pow(scaleT, 2.2);
-    const heroScale = heroBase + (heroPeak - heroBase) * scaleEased;
+    const maxProfileHeroScale = resolveMaxProfileHeroScale(camera, hero, isLightweight);
+    const profileScaleAdd = cubeEased * (maxProfileHeroScale - heroBase);
 
+    const footerProgress = footerReveal;
+    const footerScaleT =
+      cubeEased < 0.01 && footerProgress > 0.6 ? (footerProgress - 0.6) / 0.4 : 0;
+    const footerScaleAdd = (heroPeak - heroBase) * Math.pow(footerScaleT, 2.2);
+
+    const heroScale = THREE.MathUtils.clamp(
+      heroBase + profileScaleAdd + footerScaleAdd,
+      heroBase,
+      cubeEased > 0.001 ? maxProfileHeroScale + footerScaleAdd : heroPeak,
+    );
     hero.scale.setScalar(heroScale);
-    heroMaterial.opacity = 0.72 + preFooter * 0.28;
+
+    const heroOpacityBase = (0.72 + preFooter * 0.28) * CANVAS_BG_BLEND;
+    const heroOpacityProfile = isLightweight ? 0.88 : 0.96;
+    heroMaterial.opacity = THREE.MathUtils.lerp(heroOpacityBase, heroOpacityProfile, cubeEased);
+    heroMaterial.color.lerpColors(_heroColorBase, _heroColorAccent, cubeEased);
+
+    const profileGroup = profileGroupRef.current;
+    const profileShadow = profileShadowRef.current;
+    const profileMesh = profileMeshRef.current;
+    const profileWire = profileWireRef.current;
+
+    if (profileGroup && profileShadow && profileMesh && profileWire) {
+      const shadowBoost = 1.04 + photoEased * 0.03;
+      const shadowOpacity = photoEased * (isLightweight ? 0.12 : 0.18);
+
+      profileShadow.scale.set(shadowBoost, shadowBoost, 1);
+      profileMesh.scale.setScalar(1);
+      profileWire.scale.setScalar(1);
+      profileMaterial.opacity = photoEased;
+      profileShadowMaterial.opacity = shadowOpacity;
+      profileWireMaterial.opacity = photoEased * 0.92;
+      profileWireMaterial.color.lerpColors(_heroColorBase, _heroColorAccent, cubeEased);
+
+      profileGroup.visible = profileActive;
+      hero.updateMatrixWorld();
+      _b.set((t - 0.5) * 0.12, t * -0.35, 0.501);
+      hero.localToWorld(_b);
+      profileGroup.position.copy(_b);
+      profileGroup.quaternion.copy(hero.quaternion);
+      profileGroup.scale.copy(hero.scale);
+      profileGroup.rotation.z -= 0.02;
+    }
   });
 
   return (
     <>
-      
-      
-      {/* Il muro fuso ad alte prestazioni */}
+      {/* Il muro fuso ad alte prestazioni — renderOrder basso, sempre dietro al profilo */}
       <group ref={groupRef}>
-        <lineSegments ref={instancedMeshRef} material={clusterMaterial} frustumCulled={false}>
+        <lineSegments
+          ref={instancedMeshRef}
+          material={clusterMaterial}
+          renderOrder={0}
+          frustumCulled={false}
+        >
           <bufferGeometry />
         </lineSegments>
       </group>
 
-      <lineSegments ref={heroRef} geometry={unitEdges} material={heroMaterial} />
+      <lineSegments
+        ref={heroRef}
+        geometry={unitEdges}
+        material={heroMaterial}
+        renderOrder={50}
+        frustumCulled={false}
+      />
+
+      <Suspense fallback={null}>
+        <ProfileReveal
+          profileGroupRef={profileGroupRef}
+          profileShadowRef={profileShadowRef}
+          profileMeshRef={profileMeshRef}
+          profileWireRef={profileWireRef}
+          profileShadowMaterial={profileShadowMaterial}
+          profileMaterial={profileMaterial}
+          profileWireMaterial={profileWireMaterial}
+        />
+      </Suspense>
     </>
   );
 }
