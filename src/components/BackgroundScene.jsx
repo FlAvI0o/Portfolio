@@ -237,8 +237,11 @@ export default function BackgroundScene({
 
     const heroBase = 0.5;
     const heroPeak = isLightweight ? 8.5 : 13.5;
-    const anticipation = smoothstep(0, 0.18, footerReveal) * (1 - smoothstep(0.22, 0.48, footerReveal));
-    const heroScale = heroBase + anticipation * 0.22 + (heroPeak - heroBase) * footerEased;
+    const footerProgress = footerReveal;
+    const scaleT =
+      footerProgress > 0.6 ? (footerProgress - 0.6) / 0.4 : 0;
+    const scaleEased = Math.pow(scaleT, 2.2);
+    const heroScale = heroBase + (heroPeak - heroBase) * scaleEased;
 
     hero.scale.setScalar(heroScale);
     heroMaterial.opacity = 0.72 + preFooter * 0.28;
@@ -246,7 +249,7 @@ export default function BackgroundScene({
 
   return (
     <>
-      <color attach="background" args={['#f5f5f5']} />
+      
       
       {/* Il muro fuso ad alte prestazioni */}
       <group ref={groupRef}>

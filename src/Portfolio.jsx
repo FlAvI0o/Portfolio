@@ -74,6 +74,7 @@ export default function Portfolio() {
   const domRef = useRef(null);
   const heroRef = useRef(null);
   const footerRef = useRef(null);
+  const footerBgRef = useRef(null); // Nuovo riferimento per lo sfondo bianco esplosivo
   const cursorRef = useRef(null);
   const cursorRingRef = useRef(null);
   const scrollProgressRef = useRef(0);
@@ -86,7 +87,7 @@ export default function Portfolio() {
       html.classList.add('lenis', 'lenis-smooth');
 
       const lenis = new Lenis({
-        duration: 1.15,
+        duration: 2.2,
         easing: (t) => Math.min(1, 1.001 - 2 ** (-10 * t)),
         smoothWheel: true,
       });
@@ -278,17 +279,37 @@ export default function Portfolio() {
   useGSAP(
     () => {
       const footer = footerRef.current;
+      const footerBg = footerBgRef.current;
       if (!footer) return;
 
+      // Sincronizziamo il trigger del progresso 3D...
       const footerProgressTrigger = ScrollTrigger.create({
         trigger: footer,
-        start: 'top 92%',
-        end: 'top 18%',
-        scrub: 0.45,
+        start: 'top bottom',
+        end: 'top top',
+        scrub: 1,
         onUpdate: (self) => {
           footerProgressRef.current = self.progress;
         },
       });
+
+      // ...con l'espansione CSS 2D dello sfondo bianco
+      if (footerBg) {
+        gsap.fromTo(
+          footerBg,
+          { clipPath: 'inset(50%)' }, // Inizia come un punto microscopico al centro dello schermo
+          {
+            clipPath: 'inset(0%)', // Si apre rivelando lo schermo intero
+            ease: 'power2.inOut', // Matematicamente simile all'easeInOutCubic del WebGL
+            scrollTrigger: {
+              trigger: footer,
+              start: 'top bottom',
+              end: 'top top',
+              scrub: 1,
+            },
+          }
+        );
+      }
 
       const headline = footer.querySelector('.footer__headline');
       const cta = footer.querySelector('.footer__cta');
@@ -383,12 +404,24 @@ export default function Portfolio() {
         mm.revert();
       };
     },
-    { scope: footerRef },
+    { scope: appRef },
   );
 
   return (
-    <div ref={appRef} className="app">
-      <div className="canvas-layer fixed inset-0 -z-10 pointer-events-none" aria-hidden="true">
+    <div ref={appRef} className="app w-full overflow-x-clip">
+      {/* LAYER BACKGROUNDS 
+        Questi div fissi rimpiazzano il background del Canvas. 
+        Ci permettono di usare il clip-path CSS mantenendo l'effetto tridimensionale profondo.
+      */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ backgroundColor: '#f5f5f5', zIndex: -20 }} aria-hidden="true" />
+      <div 
+        ref={footerBgRef} 
+        className="fixed inset-0 pointer-events-none overflow-hidden" 
+        style={{ backgroundColor: '#ffffff', zIndex: -15, clipPath: 'inset(50%)' }} 
+        aria-hidden="true" 
+      />
+
+      <div className="canvas-layer fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: -10 }} aria-hidden="true">
         <Canvas
           camera={{ position: [0, 0, 6], fov: 42 }}
           dpr={[1, 1.75]}
@@ -402,20 +435,20 @@ export default function Portfolio() {
         </Canvas>
       </div>
 
-      <div ref={domRef} className="dom-layer">
+      <div ref={domRef} className="dom-layer w-full overflow-x-clip">
         <div ref={cursorRef} className="cursor" aria-hidden="true" />
         <div ref={cursorRingRef} className="cursor-ring" aria-hidden="true" />
 
         <header
           ref={heroRef}
-          className="hero relative flex min-h-screen w-full flex-col items-start justify-center overflow-clip px-6 md:px-20"
+          className="hero relative flex min-h-screen w-full max-w-full flex-col items-start justify-center overflow-clip px-[clamp(1.5rem,4vw,4rem)]"
         >
-          <p className="hero__eyebrow text-xs uppercase tracking-widest text-neutral-500 mb-4">
+          <p className="hero__eyebrow mb-[clamp(0.75rem,2vw,1.25rem)] text-xs uppercase tracking-widest text-neutral-500">
             FLAVIO DONNINI — WEB ENGINEER
           </p>
 
           <h1
-            className="heading-hero max-w-[90%] text-5xl font-bold leading-[0.9] tracking-tighter md:max-w-[70%] md:text-[8rem]"
+            className="heading-hero w-full max-w-full text-[clamp(3rem,11vw,12rem)] font-bold leading-[0.9] tracking-[0.02em]"
             aria-label={HERO_LINES.join(' ')}
           >
             {HERO_LINES.map((line) => (
@@ -454,26 +487,29 @@ export default function Portfolio() {
           </main>
         </div>
 
+        {/* FOOTER SENZA BG-WHITE 
+          Ora è trasparente. Lo sfondo bianco che vediamo è il div animato dietro il Canvas.
+        */}
         <footer
           ref={footerRef}
-          className="relative flex min-h-screen flex-col justify-between overflow-hidden bg-white px-6 py-20 font-sans text-black md:px-10 md:py-32"
+          className="relative flex min-h-screen w-full max-w-full flex-col justify-between overflow-x-clip px-[clamp(1.5rem,4vw,4rem)] py-[clamp(3rem,8vw,8rem)] font-sans text-black"
         >
-          <div className="flex w-full flex-col gap-10 md:flex-row md:items-start md:justify-between md:gap-16">
-            <div className="flex w-full flex-col items-start gap-8 md:w-[60%] md:gap-10">
-              <h2 className="footer__headline text-5xl font-bold uppercase leading-[0.9] tracking-normal md:text-6xl lg:text-8xl">
+          <div className="flex w-full flex-col gap-[clamp(2rem,5vw,4rem)] xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex w-full flex-col items-start gap-[clamp(1.5rem,3vw,2.5rem)] xl:w-[58%] xl:shrink-0">
+              <h2 className="footer__headline w-full max-w-full text-[clamp(2.5rem,7vw,7rem)] font-bold uppercase leading-[0.9] tracking-[0.02em]">
                 HOW ABOUT WE DO A THING OR TWO, TO+GETHER
               </h2>
               <a
                 href="mailto:hello@donniniflavio.com"
-                className="footer__cta border border-black px-8 py-4 text-sm uppercase transition-colors hover:bg-black hover:text-white rounded-full"
+                className="footer__cta rounded-full border border-black px-[clamp(1.25rem,3vw,2rem)] py-[clamp(0.75rem,2vw,1rem)] text-sm uppercase transition-colors hover:bg-black hover:text-white"
               >
                 GET IN TOUCH -&gt;
               </a>
             </div>
 
-            <div className="mt-16 grid w-full grid-cols-2 gap-x-6 gap-y-10 md:mt-0 md:w-[40%] md:grid-cols-4">
+            <div className="grid w-full min-w-0 grid-cols-1 gap-x-[clamp(1rem,3vw,2rem)] gap-y-[clamp(1.5rem,4vw,2.5rem)] md:grid-cols-2 xl:mt-0 xl:w-[38%] xl:grid-cols-4">
               {FOOTER_NAV.map((column) => (
-                <div key={column.title} className="flex flex-col gap-4">
+                <div key={column.title} className="flex min-w-0 flex-col gap-4">
                   <span className="text-xs uppercase tracking-widest text-neutral-400">
                     {column.title}
                   </span>
@@ -488,7 +524,7 @@ export default function Portfolio() {
                           {...(isExternal
                             ? { target: '_blank', rel: 'noopener noreferrer' }
                             : {})}
-                          className="transition-opacity hover:opacity-50"
+                          className="break-words transition-opacity hover:opacity-50"
                         >
                           {link.label}
                         </a>
@@ -500,7 +536,7 @@ export default function Portfolio() {
             </div>
           </div>
 
-          <div className="mt-20 flex w-full flex-col items-start gap-10 md:mt-32 md:flex-row md:items-end md:justify-between md:gap-8">
+          <div className="mt-[clamp(3rem,8vw,8rem)] flex w-full flex-col items-start gap-[clamp(1.5rem,4vw,2.5rem)] xl:flex-row xl:items-end xl:justify-between">
             <div className="shrink-0">
               <p className="max-w-xs text-xs uppercase tracking-widest text-neutral-500">
                 ASK AI FOR A SUMMARY OF FLAVIO DONNINI.
@@ -512,7 +548,7 @@ export default function Portfolio() {
               </div>
             </div>
 
-            <h1 className="footer__logo w-full text-left text-[12vw] font-bold uppercase leading-none tracking-tighter md:text-right">
+            <h1 className="footer__logo w-full min-w-0 max-w-full text-left text-[clamp(3rem,12vw,14rem)] font-bold uppercase leading-none tracking-[0.02em] xl:text-right">
               FLAVIO DONNINI.
             </h1>
           </div>
