@@ -50,18 +50,18 @@ const FOOTER_NAV = [
 
 const PROJECTS = [
   {
-    id: 'pondera',
-    title: 'Pondera',
-    tag: 'Architecture Engine',
-    description:
-      'Spatial computation platform for real-time architectural visualization. Custom scene graph, instanced geometry pipeline, and scroll-synced camera choreography across 40k+ structural nodes.',
-  },
-  {
     id: 'buongesto',
     title: 'Buongesto',
     tag: 'WebGL Crowdfunding',
     description:
       'Crowdfunding infrastructure rendering 100k+ interactive blocks at 60fps. React + Three.js layout engine with unified scroll, physics, and GPU batching for high-density node synchronization.',
+  },
+  {
+    id: 'deckforge',
+    title: 'Deckforge',
+    tag: 'Architecture Engine',
+    description:
+      'Spatial computation platform for real-time architectural visualization. Custom scene graph, instanced geometry pipeline, and scroll-synced camera choreography across 40k+ structural nodes.',
   },
 ];
 
@@ -205,7 +205,7 @@ export default function Portfolio() {
 
       window.addEventListener('pointermove', onMove);
 
-      const interactive = domRef.current?.querySelectorAll('a, button, .project-row');
+      const interactive = domRef.current?.querySelectorAll('a, button, article[data-project]');
       interactive?.forEach((el) => {
         el.addEventListener('pointerenter', onEnter);
         el.addEventListener('pointerleave', onLeave);
@@ -553,52 +553,60 @@ export default function Portfolio() {
               <span className="label">01 — 02</span>
             </div>
 
-            <article className="project-row" data-project={PROJECTS[0].id}>
-              <div className="project-row__meta">
-                <span className="label">01</span>
-                <span className="label">{PROJECTS[0].tag}</span>
+            <article
+              className="flex flex-col gap-6 p-6 md:p-12 bg-white/70 backdrop-blur-xl border border-neutral-300 rounded-3xl relative z-10 w-full mb-24 shadow-2xl"
+              data-project={PROJECTS[0].id}
+            >
+              <h2 className="text-[clamp(3rem,6vw,5rem)] font-bold leading-none uppercase tracking-tight">
+                {PROJECTS[0].title}
+              </h2>
+
+              <p className="text-lg md:text-xl font-medium max-w-3xl text-neutral-800 leading-relaxed">
+                {PROJECTS[0].description}
+              </p>
+
+              <div className="w-full h-auto mt-4 overflow-hidden rounded-xl border border-neutral-200 shadow-lg">
+                <video
+                  src="/buongesto-horizontal.mp4"
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  preload="none"
+                  controls={false}
+                  className="w-full h-auto object-cover"
+                />
               </div>
-
-              <h2 className="heading-section project-row__title">{PROJECTS[0].title}</h2>
-
-              <p className="body-sm project-row__copy">{PROJECTS[0].description}</p>
-
-              <video
-                src="/deckforge-horizontal.mp4"
-                autoPlay
-                loop
-                muted
-                playsInline
-                preload="none"
-                controls={false}
-                className="w-full mt-4 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 object-cover"
-              />
             </article>
           </section>
         </div>
 
         <div className="shell">
           <section className="work">
-            <article className="project-row" data-project={PROJECTS[1].id}>
-              <div className="project-row__meta">
-                <span className="label">02</span>
-                <span className="label">{PROJECTS[1].tag}</span>
+            <article
+              className="flex flex-col gap-6 p-6 md:p-12 bg-white/70 backdrop-blur-xl border border-neutral-300 rounded-3xl relative z-10 w-full mb-24 shadow-2xl"
+              data-project={PROJECTS[1].id}
+            >
+              <h2 className="text-[clamp(3rem,6vw,5rem)] font-bold leading-none uppercase tracking-tight">
+                {PROJECTS[1].title}
+              </h2>
+
+              <p className="text-lg md:text-xl font-medium max-w-3xl text-neutral-800 leading-relaxed">
+                {PROJECTS[1].description}
+              </p>
+
+              <div className="w-full h-auto mt-4 overflow-hidden rounded-xl border border-neutral-200 shadow-lg">
+                <video
+                  src="/deckforge-horizontal.mp4"
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  preload="none"
+                  controls={false}
+                  className="w-full h-auto object-cover"
+                />
               </div>
-
-              <h2 className="heading-section project-row__title">{PROJECTS[1].title}</h2>
-
-              <p className="body-sm project-row__copy">{PROJECTS[1].description}</p>
-
-              <video
-                src="/buongesto-horizontal.mp4"
-                autoPlay
-                loop
-                muted
-                playsInline
-                preload="none"
-                controls={false}
-                className="w-full mt-4 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 object-cover"
-              />
             </article>
           </section>
         </div>
