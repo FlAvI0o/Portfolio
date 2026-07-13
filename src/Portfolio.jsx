@@ -5,6 +5,7 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useGSAP } from '@gsap/react';
 import BackgroundScene from './components/BackgroundScene.jsx';
+import { BrandButton } from './components/BrandButton';
 import './index.css';
 import 'lenis/dist/lenis.css';
 
@@ -24,15 +25,14 @@ const FOOTER_NAV = [
       { label: 'HOME', href: '#' },
       { label: 'ABOUT', href: '#about' },
       { label: 'WORK', href: '#work' },
-      { label: 'CV', href: '#cv' },
     ],
   },
   {
     title: 'CONNECT',
     links: [
-      { label: 'GITHUB', href: 'https://github.com' },
-      { label: 'LINKEDIN', href: 'https://linkedin.com' },
-      { label: 'INSTAGRAM', href: 'https://instagram.com' },
+      { label: 'GITHUB', href: 'https://github.com/FlAvI0o' },
+      { label: 'LINKEDIN', href: 'https://www.linkedin.com/in/flavio-donnini-2b13a73a8/' },
+      { label: 'X', href: 'https://x.com/_slowdon' },
     ],
   },
   {
@@ -42,8 +42,7 @@ const FOOTER_NAV = [
   {
     title: 'ADMIN',
     links: [
-      { label: 'PRIVACY', href: '#privacy' },
-      { label: 'CAREERS', href: '#careers' },
+      { label: 'PRIVACY', href: '/privacy' },
     ],
   },
 ];
@@ -647,14 +646,16 @@ export default function Portfolio() {
           <div className="flex w-full flex-col gap-[clamp(2rem,5vw,4rem)] xl:flex-row xl:items-start xl:justify-between">
             <div className="flex w-full flex-col items-start gap-[clamp(1.5rem,3vw,2.5rem)] xl:w-[58%] xl:shrink-0">
               <h2 className="footer__headline w-full max-w-full text-[clamp(2.5rem,7vw,7rem)] font-bold uppercase leading-[0.9] tracking-[0.02em]">
-                HOW ABOUT WE DO A THING OR TWO, TO+GETHER
+                HOW ABOUT WE DO A THING OR TWO. TOGETHER
               </h2>
-              <a
-                href="mailto:hello@donniniflavio.com"
-                className="footer__cta rounded-full border border-black px-[clamp(1.25rem,3vw,2rem)] py-[clamp(0.75rem,2vw,1rem)] text-sm uppercase transition-colors hover:bg-black hover:text-white"
+              <BrandButton
+                className="footer__cta"
+                onClick={() => {
+                  window.location.href = 'mailto:flaviodonnini07@gmail.com';
+                }}
               >
-                GET IN TOUCH -&gt;
-              </a>
+                Get in touch
+              </BrandButton>
             </div>
 
             <div className="grid w-full min-w-0 grid-cols-1 gap-x-[clamp(1rem,3vw,2rem)] gap-y-[clamp(1.5rem,4vw,2.5rem)] md:grid-cols-2 xl:mt-0 xl:w-[38%] xl:grid-cols-4">
