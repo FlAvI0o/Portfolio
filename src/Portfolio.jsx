@@ -563,11 +563,16 @@ export default function Portfolio() {
 
               <p className="body-sm project-row__copy">{PROJECTS[0].description}</p>
 
-              <div className="project-row__frame" data-hover-reveal={PROJECTS[0].id}>
-                <span className="label project-row__frame-label">
-                  [{PROJECTS[0].id}.webgl — hover reveal]
-                </span>
-              </div>
+              <video
+                src="/deckforge-horizontal.mp4"
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="none"
+                controls={false}
+                className="w-full mt-4 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 object-cover"
+              />
             </article>
           </section>
         </div>
@@ -584,11 +589,16 @@ export default function Portfolio() {
 
               <p className="body-sm project-row__copy">{PROJECTS[1].description}</p>
 
-              <div className="project-row__frame" data-hover-reveal={PROJECTS[1].id}>
-                <span className="label project-row__frame-label">
-                  [{PROJECTS[1].id}.webgl — hover reveal]
-                </span>
-              </div>
+              <video
+                src="/buongesto-horizontal.mp4"
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="none"
+                controls={false}
+                className="w-full mt-4 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 object-cover"
+              />
             </article>
           </section>
         </div>

@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useFrame, useLoader, useThree } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
+import { useTexture } from '@react-three/drei';
 import gsap from 'gsap';
 import * as THREE from 'three';
 
@@ -132,10 +133,10 @@ function resolveProfilePhase(progress) {
   if (progress < 0.25) {
     const enterP = progress / 0.25;
     cubeGrowT = clamp01(enterP / 0.72);
-    photoFadeT = clamp01((enterP - 0.5) / 0.5);
+    photoFadeT = clamp01(enterP);
   } else if (progress > 0.75) {
     const exitP = (1 - progress) / 0.25;
-    photoFadeT = clamp01(exitP / 0.42);
+    photoFadeT = clamp01(exitP);
     cubeGrowT = clamp01((exitP - 0.38) / 0.62);
   } else {
     cubeGrowT = 1;
@@ -168,27 +169,18 @@ function resolveMaxProfileHeroScale(camera, heroObject, isLightweight) {
 const power4Out = gsap.parseEase('power4.out');
 
 const PROFILE_PLANE_HEIGHT = 1.4;
+const PROFILE_IMAGE_ASPECT = 4896 / 6528;
+const PROFILE_PLANE_WIDTH = PROFILE_PLANE_HEIGHT * PROFILE_IMAGE_ASPECT;
 
-function buildProfilePlaneGeometry(width = PROFILE_PLANE_HEIGHT, height = PROFILE_PLANE_HEIGHT) {
+function buildProfilePlaneGeometry(width = PROFILE_PLANE_WIDTH, height = PROFILE_PLANE_HEIGHT) {
   return new THREE.PlaneGeometry(width, height);
 }
 
-function buildProfileWireGeometry(width = PROFILE_PLANE_HEIGHT, height = PROFILE_PLANE_HEIGHT) {
+function buildProfileWireGeometry(width = PROFILE_PLANE_WIDTH, height = PROFILE_PLANE_HEIGHT) {
   const plane = new THREE.PlaneGeometry(width, height);
   const edges = new THREE.EdgesGeometry(plane);
   plane.dispose();
   return edges;
-}
-
-function resizeProfileGeometries(planeGeometry, wireGeometry, imageAspect) {
-  const height = PROFILE_PLANE_HEIGHT;
-  const width = height * imageAspect;
-  planeGeometry.dispose();
-  wireGeometry.dispose();
-  return {
-    plane: buildProfilePlaneGeometry(width, height),
-    wire: buildProfileWireGeometry(width, height),
-  };
 }
 
 function buildShadowTexture() {
@@ -209,84 +201,19 @@ function buildShadowTexture() {
   return texture;
 }
 
-function ProfileReveal({
-  profileGroupRef,
-  profileShadowRef,
-  profileMeshRef,
-  profileWireRef,
-  profileShadowMaterial,
-  profileMaterial,
-  profileWireMaterial,
-}) {
+function ProfileTextureBinder({ profileMaterial }) {
   const { gl } = useThree();
-  const profilePlaneGeometryRef = useRef(null);
-  const profileWireGeometryRef = useRef(null);
-  if (!profilePlaneGeometryRef.current) profilePlaneGeometryRef.current = buildProfilePlaneGeometry();
-  if (!profileWireGeometryRef.current) profileWireGeometryRef.current = buildProfileWireGeometry();
-
-  const texture = useLoader(THREE.TextureLoader, '/foto1.webp');
-  texture.colorSpace = THREE.SRGBColorSpace;
+  const texture = useTexture('/foto.webp');
 
   useLayoutEffect(() => {
+    texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = gl.capabilities.getMaxAnisotropy();
     texture.needsUpdate = true;
-  }, [gl, texture]);
-
-  useEffect(() => {
     profileMaterial.map = texture;
     profileMaterial.needsUpdate = true;
-  }, [profileMaterial, texture]);
+  }, [gl, texture, profileMaterial]);
 
-  useLayoutEffect(() => {
-    const image = texture.image;
-    if (!image?.width || !image?.height) return;
-
-    const imageAspect = image.width / image.height;
-    const { plane, wire } = resizeProfileGeometries(
-      profilePlaneGeometryRef.current,
-      profileWireGeometryRef.current,
-      imageAspect,
-    );
-
-    profilePlaneGeometryRef.current = plane;
-    profileWireGeometryRef.current = wire;
-
-    const assignGeometry = (mesh, geometry) => {
-      if (!mesh) return;
-      mesh.geometry = geometry;
-    };
-
-    assignGeometry(profileMeshRef.current, plane);
-    assignGeometry(profileShadowRef.current, plane);
-    assignGeometry(profileWireRef.current, wire);
-  }, [texture, profileMeshRef, profileShadowRef, profileWireRef]);
-
-  return (
-    <group ref={profileGroupRef} visible={false} renderOrder={100}>
-      <mesh
-        ref={profileShadowRef}
-        geometry={profilePlaneGeometryRef.current}
-        material={profileShadowMaterial}
-        position={[0.06, -0.14, -0.04]}
-        renderOrder={100}
-        frustumCulled={false}
-      />
-      <mesh
-        ref={profileMeshRef}
-        geometry={profilePlaneGeometryRef.current}
-        material={profileMaterial}
-        renderOrder={101}
-        frustumCulled={false}
-      />
-      <lineSegments
-        ref={profileWireRef}
-        geometry={profileWireGeometryRef.current}
-        material={profileWireMaterial}
-        renderOrder={102}
-        frustumCulled={false}
-      />
-    </group>
-  );
+  return null;
 }
 
 export default function BackgroundScene({
@@ -306,6 +233,8 @@ export default function BackgroundScene({
   const [instanceCount, setInstanceCount] = useState(() => resolveInstanceCount(lightweightModeRef));
 
   const unitEdges = useMemo(() => buildUnitEdgeGeometry(), []);
+  const profilePlaneGeometry = useMemo(() => buildProfilePlaneGeometry(), []);
+  const profileWireGeometry = useMemo(() => buildProfileWireGeometry(), []);
   const profileShadowTexture = useMemo(() => buildShadowTexture(), []);
   const clusterMaterial = useMemo(
     () =>
@@ -534,16 +463,33 @@ export default function BackgroundScene({
         frustumCulled={false}
       />
 
-      <Suspense fallback={null}>
-        <ProfileReveal
-          profileGroupRef={profileGroupRef}
-          profileShadowRef={profileShadowRef}
-          profileMeshRef={profileMeshRef}
-          profileWireRef={profileWireRef}
-          profileShadowMaterial={profileShadowMaterial}
-          profileMaterial={profileMaterial}
-          profileWireMaterial={profileWireMaterial}
+      <group ref={profileGroupRef} visible={false} renderOrder={100}>
+        <mesh
+          ref={profileShadowRef}
+          geometry={profilePlaneGeometry}
+          material={profileShadowMaterial}
+          position={[0.06, -0.14, -0.04]}
+          renderOrder={100}
+          frustumCulled={false}
         />
+        <mesh
+          ref={profileMeshRef}
+          geometry={profilePlaneGeometry}
+          material={profileMaterial}
+          renderOrder={101}
+          frustumCulled={false}
+        />
+        <lineSegments
+          ref={profileWireRef}
+          geometry={profileWireGeometry}
+          material={profileWireMaterial}
+          renderOrder={102}
+          frustumCulled={false}
+        />
+      </group>
+
+      <Suspense fallback={null}>
+        <ProfileTextureBinder profileMaterial={profileMaterial} />
       </Suspense>
     </>
   );
