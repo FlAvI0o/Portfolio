@@ -1,6 +1,5 @@
-import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useFrame, useThree } from '@react-three/fiber';
-import { useTexture } from '@react-three/drei';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useFrame } from '@react-three/fiber';
 import gsap from 'gsap';
 import * as THREE from 'three';
 
@@ -201,21 +200,6 @@ function buildShadowTexture() {
   return texture;
 }
 
-function ProfileTextureBinder({ profileMaterial }) {
-  const { gl } = useThree();
-  const texture = useTexture('/foto.webp');
-
-  useLayoutEffect(() => {
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = gl.capabilities.getMaxAnisotropy();
-    texture.needsUpdate = true;
-    profileMaterial.map = texture;
-    profileMaterial.needsUpdate = true;
-  }, [gl, texture, profileMaterial]);
-
-  return null;
-}
-
 export default function BackgroundScene({
   scrollProgressRef,
   footerProgressRef,
@@ -227,7 +211,6 @@ export default function BackgroundScene({
   const heroRef = useRef(null);
   const profileGroupRef = useRef(null);
   const profileShadowRef = useRef(null);
-  const profileMeshRef = useRef(null);
   const profileWireRef = useRef(null);
   const smoothFooterRef = useRef(0);
   const [instanceCount, setInstanceCount] = useState(() => resolveInstanceCount(lightweightModeRef));
@@ -269,18 +252,6 @@ export default function BackgroundScene({
         depthTest: false,
       }),
     [profileShadowTexture],
-  );
-  const profileMaterial = useMemo(
-    () =>
-      new THREE.MeshBasicMaterial({
-        color: '#ffffff',
-        toneMapped: false,
-        transparent: true,
-        opacity: 1,
-        depthWrite: false,
-        depthTest: false,
-      }),
-    [],
   );
   const profileWireMaterial = useMemo(
     () =>
@@ -415,17 +386,14 @@ export default function BackgroundScene({
 
     const profileGroup = profileGroupRef.current;
     const profileShadow = profileShadowRef.current;
-    const profileMesh = profileMeshRef.current;
     const profileWire = profileWireRef.current;
 
-    if (profileGroup && profileShadow && profileMesh && profileWire) {
+    if (profileGroup && profileShadow && profileWire) {
       const shadowBoost = 1.04 + photoEased * 0.03;
       const shadowOpacity = photoEased * (isLightweight ? 0.12 : 0.18);
 
       profileShadow.scale.set(shadowBoost, shadowBoost, 1);
-      profileMesh.scale.setScalar(1);
       profileWire.scale.setScalar(1);
-      profileMaterial.opacity = photoEased;
       profileShadowMaterial.opacity = shadowOpacity;
       profileWireMaterial.opacity = photoEased * 0.92;
       profileWireMaterial.color.lerpColors(_heroColorBase, _heroColorAccent, cubeEased);
@@ -472,13 +440,6 @@ export default function BackgroundScene({
           renderOrder={100}
           frustumCulled={false}
         />
-        <mesh
-          ref={profileMeshRef}
-          geometry={profilePlaneGeometry}
-          material={profileMaterial}
-          renderOrder={101}
-          frustumCulled={false}
-        />
         <lineSegments
           ref={profileWireRef}
           geometry={profileWireGeometry}
@@ -487,10 +448,6 @@ export default function BackgroundScene({
           frustumCulled={false}
         />
       </group>
-
-      <Suspense fallback={null}>
-        <ProfileTextureBinder profileMaterial={profileMaterial} />
-      </Suspense>
     </>
   );
 }

@@ -296,6 +296,15 @@ export default function Portfolio() {
       const footerBg = footerBgRef.current;
       if (!footer) return;
 
+      const syncFooterHeight = () => {
+        const height = `${window.innerHeight}px`;
+        footer.style.height = height;
+        footer.style.minHeight = height;
+        footer.style.maxHeight = height;
+      };
+
+      syncFooterHeight();
+
       // Sincronizziamo il trigger del progresso 3D...
       const footerProgressTrigger = ScrollTrigger.create({
         trigger: footer,
@@ -405,7 +414,10 @@ export default function Portfolio() {
         },
       );
 
+      ScrollTrigger.refresh();
+
       const onResize = () => {
+        syncFooterHeight();
         ScrollTrigger.refresh();
       };
 
@@ -415,6 +427,9 @@ export default function Portfolio() {
         footerProgressTrigger.kill();
         footerProgressRef.current = 0;
         window.removeEventListener('resize', onResize);
+        footer.style.height = '';
+        footer.style.minHeight = '';
+        footer.style.maxHeight = '';
         mm.revert();
       };
     },
@@ -428,12 +443,13 @@ export default function Portfolio() {
 
       const leftText = profile.querySelector('.profile-text-left');
       const rightText = profile.querySelector('.profile-text-right');
-      if (!leftText || !rightText) return;
+      const profilePhoto = profile.querySelector('.profile-photo-dom');
+      if (!leftText || !rightText || !profilePhoto) return;
 
       const mm = gsap.matchMedia();
 
       mm.add('(prefers-reduced-motion: reduce)', () => {
-        gsap.set([leftText, rightText], { opacity: 1 });
+        gsap.set([leftText, rightText, profilePhoto], { opacity: 1 });
       });
 
       mm.add('(prefers-reduced-motion: no-preference)', () => {
@@ -456,7 +472,7 @@ export default function Portfolio() {
               }
             }
 
-            gsap.set([leftText, rightText], { opacity });
+            gsap.set([leftText, rightText, profilePhoto], { opacity });
           },
         });
 
@@ -536,7 +552,9 @@ export default function Portfolio() {
             </p>
           </div>
 
-          <div className="pointer-events-none h-full w-1/3" aria-hidden="true" />
+          <div className="profile-photo-dom opacity-0 relative z-10 w-full max-w-[280px] p-4 flex flex-col items-center justify-center bg-white/70 backdrop-blur-xl border border-neutral-300 rounded-3xl shadow-2xl mx-4">
+            <img src="/foto1.webp" alt="Flavio Donnini" className="w-full h-auto object-cover rounded-2xl grayscale" />
+          </div>
 
           <div className="profile-text-right max-w-[250px] text-right font-mono text-xs uppercase tracking-wider text-black opacity-0">
             <p className="mb-2 font-bold">// BESPOKE PRODUCTS</p>
@@ -621,7 +639,7 @@ export default function Portfolio() {
         */}
         <footer
           ref={footerRef}
-          className="relative flex h-[100dvh] w-full max-w-full flex-col justify-between overflow-x-clip px-[clamp(1.5rem,4vw,4rem)] py-[clamp(2rem,5vw,4rem)] font-sans text-black"
+          className="relative flex h-[100dvh] min-h-0 max-h-[100dvh] w-full max-w-full shrink-0 flex-col justify-between overflow-hidden px-[clamp(1.5rem,4vw,4rem)] py-[clamp(2rem,5vw,4rem)] font-sans text-black"
         >
           <div className="flex w-full flex-col gap-[clamp(2rem,5vw,4rem)] xl:flex-row xl:items-start xl:justify-between">
             <div className="flex w-full flex-col items-start gap-[clamp(1.5rem,3vw,2.5rem)] xl:w-[58%] xl:shrink-0">
