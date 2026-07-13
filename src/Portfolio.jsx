@@ -441,19 +441,18 @@ export default function Portfolio() {
       const profile = profileTriggerRef.current;
       if (!profile) return;
 
-      const leftText = profile.querySelector('.profile-text-left');
-      const rightText = profile.querySelector('.profile-text-right');
       const profilePhoto = profile.querySelector('.profile-photo-dom');
-      if (!leftText || !rightText || !profilePhoto) return;
+      const profileText = profile.querySelector('.profile-text-dom');
+      if (!profilePhoto || !profileText) return;
 
       const mm = gsap.matchMedia();
 
       mm.add('(prefers-reduced-motion: reduce)', () => {
-        gsap.set([leftText, rightText, profilePhoto], { opacity: 1 });
+        gsap.set([profilePhoto, profileText], { opacity: 1 });
       });
 
       mm.add('(prefers-reduced-motion: no-preference)', () => {
-        const textTrigger = ScrollTrigger.create({
+        const profileRevealTrigger = ScrollTrigger.create({
           trigger: profile,
           start: 'top 35%',
           end: 'bottom 65%',
@@ -472,12 +471,12 @@ export default function Portfolio() {
               }
             }
 
-            gsap.set([leftText, rightText, profilePhoto], { opacity });
+            gsap.set([profilePhoto, profileText], { opacity });
           },
         });
 
         return () => {
-          textTrigger.kill();
+          profileRevealTrigger.kill();
         };
       });
 
@@ -543,24 +542,28 @@ export default function Portfolio() {
 
         <section
           ref={profileTriggerRef}
-          className="relative flex min-h-[120dvh] w-full items-center justify-between px-[clamp(2rem,6vw,6rem)] select-none"
+          className="relative flex min-h-[120dvh] w-full items-center px-[clamp(2rem,6vw,6rem)] select-none"
         >
-          <div className="profile-text-left max-w-[250px] font-mono text-xs uppercase tracking-wider text-black opacity-0">
-              <p className="mb-2 font-bold">// HIGH-END WEBGL DEVELOPMENT</p>
-            <p>
-              High-end webgl development. Interactive 3d products with react three fiber & gsap.
-            </p>
-          </div>
+          <div className="flex w-full flex-col gap-12 md:flex-row md:items-center md:gap-[clamp(2rem,5vw,4rem)]">
+            <div className="flex w-full justify-center md:w-[40%] md:justify-start">
+              <div className="profile-photo-dom opacity-0 relative z-10 flex w-full max-w-[450px] flex-col items-center justify-center rounded-3xl border border-neutral-300 bg-white/70 p-4 shadow-2xl backdrop-blur-xl">
+                <img
+                  src="/foto.webp"
+                  alt="Flavio Donnini"
+                  className="h-auto w-full rounded-2xl object-cover grayscale"
+                />
+              </div>
+            </div>
 
-          <div className="profile-photo-dom opacity-0 relative z-10 w-full max-w-[280px] p-4 flex flex-col items-center justify-center bg-white/70 backdrop-blur-xl border border-neutral-300 rounded-3xl shadow-2xl mx-4">
-            <img src="/foto1.webp" alt="Flavio Donnini" className="w-full h-auto object-cover rounded-2xl grayscale" />
-          </div>
-
-          <div className="profile-text-right max-w-[250px] text-right font-mono text-xs uppercase tracking-wider text-black opacity-0">
-            <p className="mb-2 font-bold">// BESPOKE PRODUCTS</p>
-            <p>
-              Bespoke products.
-            </p>
+            <div className="profile-text-dom w-full opacity-0 md:w-[60%]">
+              <h2 className="mb-8 text-[clamp(3rem,6vw,6rem)] font-bold uppercase leading-none tracking-tight text-black">
+                DIGITAL ENGINEERING.
+              </h2>
+              <p className="max-w-2xl text-xl font-medium leading-relaxed text-neutral-800 md:text-2xl">
+                I build high-performance web architectures and interactive canvases. No cold
+                outreach. Purely premium inbound positioning for ambitious founders.
+              </p>
+            </div>
           </div>
         </section>
 
