@@ -548,14 +548,14 @@ export default function Portfolio() {
             <div className="flex w-full justify-center md:w-[40%] md:justify-start">
               <div className="profile-photo-dom opacity-0 relative z-10 flex w-full max-w-[450px] flex-col items-center justify-center rounded-3xl border border-neutral-300 bg-white/70 p-4 shadow-2xl backdrop-blur-xl">
                 <img
-                  src="/foto.webp"
+                  src="/foto1.webp"
                   alt="Flavio Donnini"
                   className="h-auto w-full rounded-2xl object-cover grayscale"
                 />
               </div>
             </div>
 
-            <div className="profile-text-dom w-full opacity-0 md:w-[60%]">
+            <div className="profile-text-dom opacity-0 w-full md:w-[60%] flex flex-col justify-center p-8 md:p-12 bg-white/70 backdrop-blur-xl border border-neutral-300 rounded-3xl shadow-2xl relative z-10">
               <h2 className="mb-8 text-[clamp(3rem,6vw,6rem)] font-bold uppercase leading-none tracking-tight text-black">
                 DIGITAL ENGINEERING.
               </h2>
