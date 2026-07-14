@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import Lenis from 'lenis';
 import gsap from 'gsap';
@@ -6,10 +6,21 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useGSAP } from '@gsap/react';
 import BackgroundScene from './components/BackgroundScene.jsx';
 import { BrandButton } from './components/BrandButton';
-import './index.css';
+import { useMediaQuery } from './hooks/useMediaQuery.js';
+import {
+  cardRevealAlpha,
+  contentRevealAlpha,
+  resolveMorphProgress,
+} from './systems/cubeMorph.js';
 import 'lenis/dist/lenis.css';
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
+
+// Single source of truth for every gsap.matchMedia() breakpoint in this page.
+const MQ_DESKTOP = '(min-width: 768px)';
+const MQ_MOBILE = '(max-width: 767px)';
+const MQ_REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
+const MQ_NO_MOTION_PREFERENCE = '(prefers-reduced-motion: no-preference)';
 
 const HERO_LINES = [
   'HIGH-PERFORMANCE',
@@ -51,37 +62,77 @@ const PROJECTS = [
   {
     id: 'buongesto',
     title: 'Buongesto',
-    tag: 'WebGL Crowdfunding',
+    video: '/buongesto-horizontal.mp4',
     description:
       'Crowdfunding infrastructure rendering 100k+ interactive blocks at 60fps. React + Three.js layout engine with unified scroll, physics, and GPU batching for high-density node synchronization.',
   },
   {
     id: 'deckforge',
     title: 'Deckforge',
-    tag: 'Architecture Engine',
+    video: '/deckforge-horizontal.mp4',
     description:
       'Spatial computation platform for real-time architectural visualization. Custom scene graph, instanced geometry pipeline, and scroll-synced camera choreography across 40k+ structural nodes.',
   },
 ];
 
-function splitHeroLines(container) {
-  return container.querySelectorAll('.hero__line');
+function ProjectCard({ project, reducedMotion }) {
+  return (
+    <article
+      className="flex flex-col gap-6 p-6 md:p-12 bg-white/70 backdrop-blur-xl border border-neutral-300 rounded-3xl relative z-10 w-full mb-24 shadow-2xl"
+      data-project={project.id}
+    >
+      <h2 className="text-[clamp(3rem,6vw,5rem)] font-bold leading-none uppercase tracking-tight break-words">
+        {project.title}
+      </h2>
+
+      <p className="text-lg md:text-xl font-medium max-w-3xl text-neutral-800 leading-relaxed break-words">
+        {project.description}
+      </p>
+
+      <div className="w-full h-auto mt-4 overflow-hidden rounded-xl border border-neutral-200 shadow-lg">
+        <video
+          src={project.video}
+          aria-label={`${project.title} — project preview`}
+          autoPlay={!reducedMotion}
+          controls={reducedMotion}
+          loop
+          muted
+          playsInline
+          preload={reducedMotion ? 'metadata' : 'none'}
+          className="w-full h-auto object-cover"
+        />
+      </div>
+    </article>
+  );
 }
 
 export default function Portfolio() {
   const appRef = useRef(null);
-  const domRef = useRef(null);
   const heroRef = useRef(null);
   const footerRef = useRef(null);
-  const footerBgRef = useRef(null); // Nuovo riferimento per lo sfondo bianco esplosivo
-  const cursorRef = useRef(null);
-  const cursorRingRef = useRef(null);
+  const footerBgRef = useRef(null); // Sfondo bianco esplosivo dietro il footer
   const scrollProgressRef = useRef(0);
   const footerProgressRef = useRef(0);
-  const profileProgressRef = useRef(0);
   const profileTriggerRef = useRef(null);
-  const lightweightCanvasRef = useRef(false);
+  const profileImgRef = useRef(null);
+  // Registry read by the WebGL scene each frame: every glass card that the
+  // hero cube can morph into (see src/systems/cubeMorph.js).
+  const morphTargetsRef = useRef([]);
 
+  const prefersReducedMotion = useMediaQuery(MQ_REDUCED_MOTION);
+
+  // The profile photo is very high resolution and stays at opacity 0 until the
+  // scroll trigger reveals it, so the browser would defer its decode until that
+  // first paint — a long synchronous main-thread stall. Decoding it right after
+  // mount (asynchronously, off the critical path) makes the reveal free.
+  useEffect(() => {
+    profileImgRef.current?.decode?.().catch(() => {
+      // Decode can reject (e.g. navigation away mid-decode); paint-time decode
+      // remains the fallback.
+    });
+  }, []);
+
+  // Lenis + ScrollTrigger wiring and the global scroll progress feed for the canvas.
   useGSAP(
     () => {
       const html = document.documentElement;
@@ -93,6 +144,8 @@ export default function Portfolio() {
         smoothWheel: true,
       });
 
+      // Lenis scrolls the window natively, so ScrollTrigger needs no scrollerProxy —
+      // keeping them in sync only requires the update hook + shared ticker.
       lenis.on('scroll', ScrollTrigger.update);
 
       const onTick = (time) => {
@@ -102,24 +155,7 @@ export default function Portfolio() {
       gsap.ticker.add(onTick);
       gsap.ticker.lagSmoothing(0);
 
-      ScrollTrigger.scrollerProxy(document.documentElement, {
-        scrollTop(value) {
-          if (arguments.length) {
-            lenis.scrollTo(value, { immediate: true });
-          }
-          return lenis.scroll;
-        },
-        getBoundingClientRect() {
-          return {
-            top: 0,
-            left: 0,
-            width: window.innerWidth,
-            height: window.innerHeight,
-          };
-        },
-      });
-
-      const progressTrigger = ScrollTrigger.create({
+      ScrollTrigger.create({
         start: 0,
         end: 'max',
         onUpdate: (self) => {
@@ -127,122 +163,39 @@ export default function Portfolio() {
         },
       });
 
-      const profileProgressTrigger = ScrollTrigger.create({
-        trigger: profileTriggerRef.current,
-        start: 'top 35%',
-        end: 'bottom 65%',
-        scrub: true,
-        onUpdate: (self) => {
-          profileProgressRef.current = self.progress;
-        },
-      });
-
-      const onResize = () => {
-        ScrollTrigger.refresh();
-      };
-
-      const canvasMm = gsap.matchMedia();
-
-      canvasMm.add(
-        {
-          isDesktop: '(min-width: 768px)',
-          isMobile: '(max-width: 767px)',
-        },
-        (media) => {
-          lightweightCanvasRef.current = media.conditions.isMobile;
-        },
-      );
-
-      window.addEventListener('resize', onResize);
-      ScrollTrigger.refresh();
-
       return () => {
-        window.removeEventListener('resize', onResize);
-        canvasMm.revert();
         gsap.ticker.remove(onTick);
-        progressTrigger.kill();
-        profileProgressTrigger.kill();
-        profileProgressRef.current = 0;
+        gsap.ticker.lagSmoothing(500, 33);
         lenis.destroy();
         html.classList.remove('lenis', 'lenis-smooth', 'lenis-scrolling');
-        ScrollTrigger.scrollerProxy(document.documentElement, {});
+        scrollProgressRef.current = 0;
       };
     },
     { scope: appRef },
   );
 
-  useGSAP(
-    (context, contextSafe) => {
-      const cursor = cursorRef.current;
-      const ring = cursorRingRef.current;
-      if (!cursor || !ring) return;
-
-      gsap.set([cursor, ring], { xPercent: -50, yPercent: -50 });
-
-      const onMove = contextSafe((event) => {
-        gsap.to(cursor, {
-          x: event.clientX,
-          y: event.clientY,
-          duration: 0.18,
-          ease: 'power3.out',
-        });
-        gsap.to(ring, {
-          x: event.clientX,
-          y: event.clientY,
-          duration: 0.45,
-          ease: 'power3.out',
-        });
-      });
-
-      const onEnter = contextSafe(() => {
-        gsap.to(ring, { scale: 1.65, opacity: 0.35, duration: 0.3, ease: 'power2.out' });
-      });
-
-      const onLeave = contextSafe(() => {
-        gsap.to(ring, { scale: 1, opacity: 1, duration: 0.3, ease: 'power2.out' });
-      });
-
-      window.addEventListener('pointermove', onMove);
-
-      const interactive = domRef.current?.querySelectorAll('a, button, article[data-project]');
-      interactive?.forEach((el) => {
-        el.addEventListener('pointerenter', onEnter);
-        el.addEventListener('pointerleave', onLeave);
-      });
-
-      return () => {
-        window.removeEventListener('pointermove', onMove);
-        interactive?.forEach((el) => {
-          el.removeEventListener('pointerenter', onEnter);
-          el.removeEventListener('pointerleave', onLeave);
-        });
-      };
-    },
-    { scope: domRef },
-  );
-
+  // Hero entrance animation (one-shot, not scroll-driven).
   useGSAP(
     () => {
       const hero = heroRef.current;
       if (!hero) return;
 
-      const lines = splitHeroLines(hero);
+      const lines = hero.querySelectorAll('.hero__line');
       const eyebrow = hero.querySelector('.hero__eyebrow');
-      const cta = hero.querySelector('.hero__cta');
 
       const mm = gsap.matchMedia();
 
       mm.add(
         {
-          isDesktop: '(min-width: 768px)',
-          isMobile: '(max-width: 767px)',
-          reduceMotion: '(prefers-reduced-motion: reduce)',
+          isDesktop: MQ_DESKTOP,
+          isMobile: MQ_MOBILE,
+          reduceMotion: MQ_REDUCED_MOTION,
         },
         (media) => {
           const { isDesktop, reduceMotion } = media.conditions;
 
           if (reduceMotion) {
-            gsap.set([lines, eyebrow, cta], { y: 0, opacity: 1, clearProps: 'transform' });
+            gsap.set([lines, eyebrow], { y: 0, opacity: 1, clearProps: 'transform' });
             return;
           }
 
@@ -251,49 +204,38 @@ export default function Portfolio() {
           const lineStagger = isDesktop ? 0.09 : 0.07;
 
           gsap.set(lines, { y: lineY, opacity: 0 });
-          gsap.set([eyebrow, cta], { y: 24, opacity: 0 });
+          gsap.set(eyebrow, { y: 24, opacity: 0 });
 
-          const tl = gsap.timeline({ delay: 0.12 });
-
-          tl.to(lines, {
-            y: 0,
-            opacity: 1,
-            duration: lineDuration,
-            stagger: lineStagger,
-            ease: 'power4.out',
-          })
+          gsap
+            .timeline({ delay: 0.12 })
+            .to(lines, {
+              y: 0,
+              opacity: 1,
+              duration: lineDuration,
+              stagger: lineStagger,
+              ease: 'power4.out',
+            })
             .to(
               eyebrow,
               { y: 0, opacity: 1, duration: 0.7, ease: 'power3.out' },
               0,
-            )
-            .to(
-              cta,
-              { y: 0, opacity: 1, duration: 0.7, ease: 'power3.out' },
-              '-=0.45',
             );
         },
       );
 
-      const onResize = () => {
-        ScrollTrigger.refresh();
-      };
-
-      window.addEventListener('resize', onResize);
-
       return () => {
-        window.removeEventListener('resize', onResize);
         mm.revert();
       };
     },
     { scope: heroRef },
   );
 
+  // Footer: pinned-height sync, white background reveal and entrance timeline.
   useGSAP(
     () => {
       const footer = footerRef.current;
       const footerBg = footerBgRef.current;
-      if (!footer) return;
+      if (!footer || !footerBg) return;
 
       const syncFooterHeight = () => {
         const height = `${window.innerHeight}px`;
@@ -303,35 +245,29 @@ export default function Portfolio() {
       };
 
       syncFooterHeight();
+      // Re-measure right before every ScrollTrigger refresh (including its own
+      // debounced resize handling) instead of thrashing on raw resize events.
+      ScrollTrigger.addEventListener('refreshInit', syncFooterHeight);
 
-      // Sincronizziamo il trigger del progresso 3D...
-      const footerProgressTrigger = ScrollTrigger.create({
-        trigger: footer,
-        start: 'top bottom',
-        end: 'top top',
-        scrub: 1,
-        onUpdate: (self) => {
-          footerProgressRef.current = self.progress;
-        },
-      });
-
-      // ...con l'espansione CSS 2D dello sfondo bianco
-      if (footerBg) {
-        gsap.fromTo(
-          footerBg,
-          { clipPath: 'inset(50%)' }, // Inizia come un punto microscopico al centro dello schermo
-          {
-            clipPath: 'inset(0%)', // Si apre rivelando lo schermo intero
-            ease: 'power2.inOut', // Matematicamente simile all'easeInOutCubic del WebGL
-            scrollTrigger: {
-              trigger: footer,
-              start: 'top bottom',
-              end: 'top top',
-              scrub: 1,
+      // Espansione CSS 2D dello sfondo bianco, sincronizzata con il progresso 3D
+      // (un solo trigger alimenta sia il tween che il canvas).
+      gsap.fromTo(
+        footerBg,
+        { clipPath: 'inset(50%)' }, // Punto microscopico al centro dello schermo
+        {
+          clipPath: 'inset(0%)', // Si apre rivelando lo schermo intero
+          ease: 'power2.inOut', // Matematicamente simile all'easeInOutCubic del WebGL
+          scrollTrigger: {
+            trigger: footer,
+            start: 'top bottom',
+            end: 'top top',
+            scrub: 1,
+            onUpdate: (self) => {
+              footerProgressRef.current = self.progress;
             },
-          }
-        );
-      }
+          },
+        },
+      );
 
       const headline = footer.querySelector('.footer__headline');
       const cta = footer.querySelector('.footer__cta');
@@ -341,9 +277,9 @@ export default function Portfolio() {
 
       mm.add(
         {
-          isDesktop: '(min-width: 768px)',
-          isMobile: '(max-width: 767px)',
-          reduceMotion: '(prefers-reduced-motion: reduce)',
+          isDesktop: MQ_DESKTOP,
+          isMobile: MQ_MOBILE,
+          reduceMotion: MQ_REDUCED_MOTION,
         },
         (media) => {
           const { isDesktop, isMobile, reduceMotion } = media.conditions;
@@ -385,20 +321,20 @@ export default function Portfolio() {
               transformOrigin: 'right center',
             });
 
-            const tl = gsap.timeline({
-              scrollTrigger: {
-                trigger: footer,
-                start: 'top 85%',
-                toggleActions: 'play none none reverse',
-              },
-            });
-
-            tl.to(headline, {
-              y: 0,
-              opacity: 1,
-              duration: 1.05,
-              ease: 'power4.out',
-            })
+            gsap
+              .timeline({
+                scrollTrigger: {
+                  trigger: footer,
+                  start: 'top 85%',
+                  toggleActions: 'play none none reverse',
+                },
+              })
+              .to(headline, {
+                y: 0,
+                opacity: 1,
+                duration: 1.05,
+                ease: 'power4.out',
+              })
               .to(
                 cta,
                 { y: 0, opacity: 1, duration: 0.85, ease: 'power3.out' },
@@ -413,71 +349,146 @@ export default function Portfolio() {
         },
       );
 
+      // Single mount refresh, after the footer height is locked in. Runs last of
+      // the mount effects, so every trigger re-measures against final layout.
       ScrollTrigger.refresh();
 
-      const onResize = () => {
-        syncFooterHeight();
-        ScrollTrigger.refresh();
-      };
-
-      window.addEventListener('resize', onResize);
-
       return () => {
-        footerProgressTrigger.kill();
+        ScrollTrigger.removeEventListener('refreshInit', syncFooterHeight);
+        mm.revert();
         footerProgressRef.current = 0;
-        window.removeEventListener('resize', onResize);
         footer.style.height = '';
         footer.style.minHeight = '';
         footer.style.maxHeight = '';
-        mm.revert();
       };
     },
     { scope: appRef },
   );
 
+  // Morph targets: each glass card registers a ScrollTrigger whose progress
+  // feeds both layers of the same timeline — the WebGL cube (flight, corner
+  // rounding, wireframe dissolve) and the DOM card reveal (glass shell first,
+  // content just after). Adding a future card is one more entry here.
   useGSAP(
     () => {
-      const profile = profileTriggerRef.current;
-      if (!profile) return;
+      const app = appRef.current;
+      if (!app) return;
 
-      const profilePhoto = profile.querySelector('.profile-photo-dom');
-      const profileText = profile.querySelector('.profile-text-dom');
-      if (!profilePhoto || !profileText) return;
+      const targetConfigs = [
+        {
+          id: 'profile',
+          cardSelector: '.profile-photo-dom',
+          // Revealed on the same curve as the card, without being a cube target.
+          companionSelector: '.profile-text-dom',
+          trigger: profileTriggerRef.current,
+          start: 'top 35%',
+          end: 'bottom 70%',
+          enterRange: [0, 0.34],
+          exitRange: [0.72, 1],
+        },
+        // Project ranges are staggered on purpose: the delayed enter and the
+        // early-finishing exit guarantee the previous card has fully released
+        // the cube before the next one claims it — even on very tall
+        // viewports where consecutive triggers overlap in scroll space.
+        {
+          id: 'project-buongesto',
+          cardSelector: '[data-project="buongesto"]',
+          start: 'top 80%',
+          end: 'bottom 25%',
+          enterRange: [0.14, 0.38],
+          exitRange: [0.78, 0.95],
+        },
+        {
+          id: 'project-deckforge',
+          cardSelector: '[data-project="deckforge"]',
+          start: 'top 80%',
+          end: 'bottom 25%',
+          enterRange: [0.14, 0.38],
+          exitRange: [0.78, 0.95],
+        },
+        {
+          id: 'footer-ai',
+          cardSelector: '.footer-ai-card',
+          trigger: footerRef.current,
+          start: 'top bottom',
+          end: 'top top',
+          // Scroll ends with the footer fully revealed, so there is no exit:
+          // the cube's final state IS the AI card.
+          enterRange: [0.42, 1],
+          exitRange: null,
+        },
+      ];
 
       const mm = gsap.matchMedia();
 
-      mm.add('(prefers-reduced-motion: reduce)', () => {
-        gsap.set([profilePhoto, profileText], { opacity: 1 });
-      });
+      mm.add(
+        {
+          reduceMotion: MQ_REDUCED_MOTION,
+          noPreference: MQ_NO_MOTION_PREFERENCE,
+        },
+        (media) => {
+          const { reduceMotion } = media.conditions;
+          const entries = [];
 
-      mm.add('(prefers-reduced-motion: no-preference)', () => {
-        const profileRevealTrigger = ScrollTrigger.create({
-          trigger: profile,
-          start: 'top 35%',
-          end: 'bottom 65%',
-          scrub: true,
-          onUpdate: (self) => {
-            const progress = self.progress;
-            let opacity = 0;
+          for (const config of targetConfigs) {
+            const card = app.querySelector(config.cardSelector);
+            if (!card) continue;
 
-            if (progress > 0 && progress < 1) {
-              if (progress < 0.25) {
-                opacity = progress / 0.25;
-              } else if (progress > 0.75) {
-                opacity = (1 - progress) / 0.25;
-              } else {
-                opacity = 1;
-              }
+            const companion = config.companionSelector
+              ? app.querySelector(config.companionSelector)
+              : null;
+            const shellEls = companion ? [card, companion] : [card];
+            const contentEls = Array.from(card.children);
+
+            if (reduceMotion) {
+              gsap.set([...shellEls, ...contentEls], { opacity: 1 });
+              continue;
             }
 
-            gsap.set([profilePhoto, profileText], { opacity });
-          },
-        });
+            gsap.set(shellEls, { opacity: 0 });
 
-        return () => {
-          profileRevealTrigger.kill();
-        };
-      });
+            const entry = {
+              id: config.id,
+              el: card,
+              progressRef: { current: 0 },
+              enterRange: config.enterRange,
+              exitRange: config.exitRange,
+              radiusPx: parseFloat(getComputedStyle(card).borderTopLeftRadius) || 0,
+            };
+
+            const syncDomToProgress = (self) => {
+              entry.progressRef.current = self.progress;
+
+              const m = resolveMorphProgress(
+                self.progress,
+                config.enterRange,
+                config.exitRange,
+              );
+              gsap.set(shellEls, { opacity: cardRevealAlpha(m) });
+              gsap.set(contentEls, { opacity: contentRevealAlpha(m) });
+            };
+
+            ScrollTrigger.create({
+              trigger: config.trigger ?? card,
+              start: config.start,
+              end: config.end,
+              scrub: true,
+              onUpdate: syncDomToProgress,
+              // Restores the correct state after resize or a mid-page reload,
+              // where onUpdate alone would leave stale opacities.
+              onRefresh: syncDomToProgress,
+            });
+
+            entries.push(entry);
+          }
+
+          morphTargetsRef.current = entries;
+
+          return () => {
+            morphTargetsRef.current = [];
+          };
+        },
+      );
 
       return () => {
         mm.revert();
@@ -509,37 +520,36 @@ export default function Portfolio() {
           <BackgroundScene
             scrollProgressRef={scrollProgressRef}
             footerProgressRef={footerProgressRef}
-            profileProgressRef={profileProgressRef}
-            lightweightModeRef={lightweightCanvasRef}
+            morphTargetsRef={morphTargetsRef}
           />
         </Canvas>
       </div>
 
-      <div ref={domRef} className="dom-layer w-full overflow-x-clip">
-        <div ref={cursorRef} className="cursor" aria-hidden="true" />
-        <div ref={cursorRingRef} className="cursor-ring" aria-hidden="true" />
-
+      <div className="dom-layer w-full overflow-x-clip">
         <header
           ref={heroRef}
           className="hero relative flex min-h-screen w-full max-w-full flex-col items-start justify-center overflow-clip px-[clamp(1.5rem,4vw,4rem)]"
         >
-          <p className="hero__eyebrow mb-[clamp(0.75rem,2vw,1.25rem)] text-xs uppercase tracking-widest text-neutral-500">
-            FLAVIO DONNINI — WEB ENGINEER
-          </p>
+          <div className="w-full relative z-10 flex flex-col justify-center bg-[radial-gradient(ellipse_at_center,_rgba(255,255,255,0.85)_0%,_rgba(255,255,255,0)_70%)] md:bg-none">
+            <p className="hero__eyebrow mb-[clamp(0.75rem,2vw,1.25rem)] text-xs uppercase tracking-widest text-neutral-500">
+              FLAVIO DONNINI — WEB ENGINEER
+            </p>
 
-          <h1
-            className="heading-hero w-full max-w-full text-[clamp(3rem,11vw,12rem)] font-bold leading-[0.9] tracking-[0.02em]"
-            aria-label={HERO_LINES.join(' ')}
-          >
-            {HERO_LINES.map((line) => (
-              <span key={line} className="hero__line-mask">
-                <span className="hero__line">{line}</span>
-              </span>
-            ))}
-          </h1>
+            <h1
+              className="heading-hero w-full max-w-full text-[clamp(3rem,11vw,12rem)] font-bold leading-[0.9] tracking-[0.02em]"
+              aria-label={HERO_LINES.join(' ')}
+            >
+              {HERO_LINES.map((line) => (
+                <span key={line} className="hero__line-mask">
+                  <span className="hero__line">{line}</span>
+                </span>
+              ))}
+            </h1>
+          </div>
         </header>
 
         <section
+          id="about"
           ref={profileTriggerRef}
           className="relative flex min-h-[120dvh] w-full items-center px-[clamp(2rem,6vw,6rem)] select-none"
         >
@@ -547,15 +557,19 @@ export default function Portfolio() {
             <div className="flex w-full justify-center md:w-[40%] md:justify-start">
               <div className="profile-photo-dom opacity-0 relative z-10 flex w-full max-w-[450px] flex-col items-center justify-center rounded-3xl border border-neutral-300 bg-white/70 p-4 shadow-2xl backdrop-blur-xl">
                 <img
+                  ref={profileImgRef}
                   src="/foto1.webp"
                   alt="Flavio Donnini"
+                  width={4896}
+                  height={6528}
+                  decoding="async"
                   className="h-auto w-full rounded-2xl object-cover grayscale"
                 />
               </div>
             </div>
 
             <div className="profile-text-dom opacity-0 w-full md:w-[60%] flex flex-col justify-center p-8 md:p-12 bg-white/70 backdrop-blur-xl border border-neutral-300 rounded-3xl shadow-2xl relative z-10">
-              <h2 className="mb-8 text-[clamp(3rem,6vw,6rem)] font-bold uppercase leading-none tracking-tight text-black">
+              <h2 className="mb-8 text-[clamp(3rem,6vw,6rem)] font-bold uppercase leading-none tracking-tight text-black break-words">
                 DIGITAL ENGINEERING.
               </h2>
               <p className="max-w-2xl text-xl font-medium leading-relaxed text-neutral-800 md:text-2xl">
@@ -573,68 +587,18 @@ export default function Portfolio() {
               <span className="label">01 — 02</span>
             </div>
 
-            <article
-              className="flex flex-col gap-6 p-6 md:p-12 bg-white/70 backdrop-blur-xl border border-neutral-300 rounded-3xl relative z-10 w-full mb-24 shadow-2xl"
-              data-project={PROJECTS[0].id}
-            >
-              <h2 className="text-[clamp(3rem,6vw,5rem)] font-bold leading-none uppercase tracking-tight">
-                {PROJECTS[0].title}
-              </h2>
-
-              <p className="text-lg md:text-xl font-medium max-w-3xl text-neutral-800 leading-relaxed">
-                {PROJECTS[0].description}
-              </p>
-
-              <div className="w-full h-auto mt-4 overflow-hidden rounded-xl border border-neutral-200 shadow-lg">
-                <video
-                  src="/buongesto-horizontal.mp4"
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
-                  preload="none"
-                  controls={false}
-                  className="w-full h-auto object-cover"
-                />
-              </div>
-            </article>
+            <ProjectCard project={PROJECTS[0]} reducedMotion={prefersReducedMotion} />
           </section>
         </div>
 
         <div className="shell">
           <section className="work">
-            <article
-              className="flex flex-col gap-6 p-6 md:p-12 bg-white/70 backdrop-blur-xl border border-neutral-300 rounded-3xl relative z-10 w-full mb-24 shadow-2xl"
-              data-project={PROJECTS[1].id}
-            >
-              <h2 className="text-[clamp(3rem,6vw,5rem)] font-bold leading-none uppercase tracking-tight">
-                {PROJECTS[1].title}
-              </h2>
-
-              <p className="text-lg md:text-xl font-medium max-w-3xl text-neutral-800 leading-relaxed">
-                {PROJECTS[1].description}
-              </p>
-
-              <div className="w-full h-auto mt-4 overflow-hidden rounded-xl border border-neutral-200 shadow-lg">
-                <video
-                  src="/deckforge-horizontal.mp4"
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
-                  preload="none"
-                  controls={false}
-                  className="w-full h-auto object-cover"
-                />
-              </div>
-            </article>
+            <ProjectCard project={PROJECTS[1]} reducedMotion={prefersReducedMotion} />
           </section>
         </div>
 
-        <section
-          className="transition-cube relative min-h-[100dvh] w-full"
-          aria-label="3D cluster transition"
-        />
+        {/* Spacer di scroll per la transizione del cluster 3D — nessun contenuto */}
+        <div className="transition-cube relative min-h-[100dvh] w-full" aria-hidden="true" />
 
         {/* FOOTER SENZA BG-WHITE 
           Ora è trasparente. Lo sfondo bianco che vediamo è il div animato dietro il Canvas.
@@ -664,7 +628,7 @@ export default function Portfolio() {
                   <span className="text-xs uppercase tracking-widest text-neutral-400">
                     {column.title}
                   </span>
-                  <nav className="flex flex-col gap-2 text-xs uppercase tracking-wide">
+                  <nav aria-label={column.title} className="flex flex-col gap-2 text-xs uppercase tracking-wide">
                     {column.links.map((link) => {
                       const isExternal = link.href.startsWith('http');
 
@@ -688,7 +652,9 @@ export default function Portfolio() {
           </div>
 
           <div className="mt-[clamp(3rem,8vw,8rem)] flex w-full flex-col items-start gap-[clamp(1.5rem,4vw,2.5rem)] xl:flex-row xl:items-end xl:justify-between">
-            <div className="shrink-0">
+            {/* AI interaction card — a morph destination: the hero cube lands
+              here and becomes this card at the end of the page. */}
+            <div className="footer-ai-card shrink-0 rounded-3xl border border-neutral-300 bg-white/70 p-6 shadow-2xl backdrop-blur-xl">
               <p className="max-w-xs text-xs uppercase tracking-widest text-neutral-500">
                 ASK AI FOR A SUMMARY OF FLAVIO DONNINI.
               </p>
@@ -699,9 +665,11 @@ export default function Portfolio() {
               </div>
             </div>
 
-            <h1 className="footer__logo w-full min-w-0 max-w-full text-left text-[clamp(3rem,12vw,14rem)] font-bold uppercase leading-none tracking-[0.02em] xl:text-right">
+            {/* 10.5vw (instead of the clipped 14vw nowrap) keeps the wordmark on a
+              single unclipped line across desktop widths; small screens may wrap. */}
+            <p className="footer__logo w-full min-w-0 max-w-full text-left text-[clamp(2.75rem,10.5vw,13rem)] font-bold uppercase leading-none tracking-[0.02em] xl:text-right">
               FLAVIO DONNINI.
-            </h1>
+            </p>
           </div>
         </footer>
       </div>

@@ -1,10 +1,3 @@
-import { useRef } from 'react';
-import gsap from 'gsap';
-import { useGSAP } from '@gsap/react';
-import './index.css';
-
-gsap.registerPlugin(useGSAP);
-
 const SECTIONS = [
   {
     title: 'Overview',
@@ -75,60 +68,6 @@ const SECTIONS = [
 ];
 
 export default function Privacy() {
-  const domRef = useRef(null);
-  const cursorRef = useRef(null);
-  const cursorRingRef = useRef(null);
-
-  useGSAP(
-    (context, contextSafe) => {
-      const cursor = cursorRef.current;
-      const ring = cursorRingRef.current;
-      if (!cursor || !ring) return;
-
-      gsap.set([cursor, ring], { xPercent: -50, yPercent: -50 });
-
-      const onMove = contextSafe((event) => {
-        gsap.to(cursor, {
-          x: event.clientX,
-          y: event.clientY,
-          duration: 0.18,
-          ease: 'power3.out',
-        });
-        gsap.to(ring, {
-          x: event.clientX,
-          y: event.clientY,
-          duration: 0.45,
-          ease: 'power3.out',
-        });
-      });
-
-      const onEnter = contextSafe(() => {
-        gsap.to(ring, { scale: 1.65, opacity: 0.35, duration: 0.3, ease: 'power2.out' });
-      });
-
-      const onLeave = contextSafe(() => {
-        gsap.to(ring, { scale: 1, opacity: 1, duration: 0.3, ease: 'power2.out' });
-      });
-
-      window.addEventListener('pointermove', onMove);
-
-      const interactive = domRef.current?.querySelectorAll('a');
-      interactive?.forEach((el) => {
-        el.addEventListener('pointerenter', onEnter);
-        el.addEventListener('pointerleave', onLeave);
-      });
-
-      return () => {
-        window.removeEventListener('pointermove', onMove);
-        interactive?.forEach((el) => {
-          el.removeEventListener('pointerenter', onEnter);
-          el.removeEventListener('pointerleave', onLeave);
-        });
-      };
-    },
-    { scope: domRef },
-  );
-
   return (
     <div className="app w-full overflow-x-clip">
       <div
@@ -137,10 +76,7 @@ export default function Privacy() {
         aria-hidden="true"
       />
 
-      <div ref={domRef} className="dom-layer w-full overflow-x-clip">
-        <div ref={cursorRef} className="cursor" aria-hidden="true" />
-        <div ref={cursorRingRef} className="cursor-ring" aria-hidden="true" />
-
+      <div className="dom-layer w-full overflow-x-clip">
         <header className="border-b-[3px] border-black px-[clamp(1.5rem,4vw,4rem)] py-[clamp(3rem,8vw,6rem)]">
           <p className="mb-4 text-xs uppercase tracking-widest text-neutral-500">
             ADMIN — FLAVIO DONNINI
