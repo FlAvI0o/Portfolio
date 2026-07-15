@@ -177,8 +177,8 @@ a {
 .work {
   display: flex;
   flex-direction: column;
-  gap: clamp(4rem, 10vw, 8rem);
-  padding-block: clamp(4rem, 10vw, 8rem) clamp(5rem, 12vw, 10rem);
+  gap: clamp(4rem, 10vw, 9rem);
+  padding-block: clamp(4rem, 10vw, 9rem) clamp(5rem, 12vw, 11rem);
 }
 
 .work__index {

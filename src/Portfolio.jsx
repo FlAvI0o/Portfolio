@@ -78,7 +78,7 @@ const PROJECTS = [
 function ProjectCard({ project, reducedMotion }) {
   return (
     <article
-      className="flex flex-col gap-6 p-6 md:p-12 bg-white/70 backdrop-blur-xl border border-neutral-300 rounded-3xl relative z-10 w-full mb-24 shadow-2xl"
+      className="flex flex-col gap-6 p-6 md:p-12 bg-white/70 backdrop-blur-xl border border-neutral-300 rounded-3xl relative z-10 w-full shadow-2xl"
       data-project={project.id}
     >
       <h2 className="text-[clamp(3rem,6vw,5rem)] font-bold leading-none uppercase tracking-tight break-words">
@@ -551,7 +551,7 @@ export default function Portfolio() {
         <section
           id="about"
           ref={profileTriggerRef}
-          className="relative flex min-h-[120dvh] w-full items-center px-[clamp(2rem,6vw,6rem)] select-none"
+          className="relative flex min-h-[120dvh] md:min-h-[132dvh] w-full items-center px-[clamp(2rem,6vw,6rem)] select-none"
         >
           <div className="flex w-full flex-col gap-12 md:flex-row md:items-center md:gap-[clamp(2rem,5vw,4rem)]">
             <div className="flex w-full justify-center md:w-[40%] md:justify-start">

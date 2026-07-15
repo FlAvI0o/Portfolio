@@ -25,6 +25,11 @@ const CANVAS_BG_BLEND = 0.42;
 // wireframe keeps a silhouette until it dissolves into the DOM card).
 const MORPH_END_DEPTH = 0.015;
 
+// Damping factor for the scroll progress fed into the cluster/hero base
+// transforms — turns per-tick scroll steps into continuous, weighted motion
+// instead of an instant 1:1 follow (mirrors the footer reveal's own damping).
+const SCROLL_DAMPING = 5;
+
 const GOLDEN = Math.PI * (3 - Math.sqrt(5));
 const HUB_Y_BASE = -1.6;
 
@@ -162,6 +167,7 @@ export default function BackgroundScene({
   const heroRef = useRef(null);
   const morphOutlineRef = useRef(null);
   const smoothFooterRef = useRef(0);
+  const smoothScrollRef = useRef(0);
 
   const isLightweight = useMediaQuery(MOBILE_QUERY);
   const instanceCount = isLightweight ? MOBILE_COUNT : DESKTOP_COUNT;
@@ -267,7 +273,19 @@ export default function BackgroundScene({
     if (!group || !hero || !outline) return;
 
     const { camera, size } = state;
-    const scrollT = scrollProgressRef.current;
+
+    // Raw scroll progress arrives in discrete per-tick steps, which reads as
+    // an instant, mechanical follow when it drives rotation/position
+    // directly. Damping it — same technique as the footer reveal below —
+    // gives the cluster and hero base motion continuity and weight without
+    // changing where either ends up.
+    smoothScrollRef.current = THREE.MathUtils.damp(
+      smoothScrollRef.current,
+      scrollProgressRef.current,
+      SCROLL_DAMPING,
+      delta,
+    );
+    const scrollT = smoothScrollRef.current;
 
     smoothFooterRef.current = THREE.MathUtils.damp(
       smoothFooterRef.current,
