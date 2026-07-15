@@ -178,7 +178,9 @@ a {
   display: flex;
   flex-direction: column;
   gap: clamp(4rem, 10vw, 9rem);
-  padding-block: clamp(4rem, 10vw, 9rem) clamp(5rem, 12vw, 11rem);
+  /* Vertical spacing now comes from the min-h-screen/py-* utilities on the
+     <section> itself (see Portfolio.jsx) — kept off this unlayered rule so
+     it doesn't silently out-cascade those Tailwind utility classes. */
 }
 
 .work__index {
