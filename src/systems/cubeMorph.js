@@ -75,6 +75,27 @@ export function contentRevealAlpha(m) {
   return smoothstep(phase01(m, MORPH_PHASES.content));
 }
 
+// How many viewport-heights ahead of a morph target's own top edge the idle
+// hero cube starts fading back in — long enough that it's fully present
+// before the section (and any morph) actually arrives, short enough that it
+// stays gone through an entire bridge runway in between.
+export const REST_APPEAR_LEAD_VH = 1.2;
+
+/**
+ * How present the idle hero cube should be, driven by one morph target's
+ * live viewport rect rather than its scroll-trigger progress — progress
+ * reads as 0 both "nowhere near yet" and "long since finished", which is
+ * useless for "how far away is it". 0 while the target is still more than
+ * `leadVh` viewport-heights below the fold, ramping to 1 by the time its top
+ * edge reaches the viewport, and hard 0 again once it has fully scrolled
+ * past — the cube must never re-arm for a section it has already left.
+ */
+export function restPresenceForRect(rectTop, rectBottom, viewportHeight, leadVh = REST_APPEAR_LEAD_VH) {
+  if (rectBottom <= 0) return 0;
+  const lead = viewportHeight * leadVh;
+  return smoothstep(clamp01((lead - rectTop) / lead));
+}
+
 /**
  * Projects a DOM element's viewport rect onto the WebGL plane z = 0.
  *

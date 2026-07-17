@@ -12,7 +12,10 @@ import {
   contentRevealAlpha,
   phase01,
   resolveMorphProgress,
+  smoothstep,
 } from './systems/cubeMorph.js';
+import { BRIDGE_BEAT, beatExit, statementWipe } from './systems/director.js';
+import { createScrollResistance } from './systems/resistance.js';
 import 'lenis/dist/lenis.css';
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -21,7 +24,33 @@ gsap.registerPlugin(ScrollTrigger, useGSAP);
 const MQ_DESKTOP = '(min-width: 768px)';
 const MQ_MOBILE = '(max-width: 767px)';
 const MQ_REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
-const MQ_NO_MOTION_PREFERENCE = '(prefers-reduced-motion: no-preference)';
+
+// Weight — nothing should react instantly to the scrollbar. Lenis already
+// smooths the raw wheel/touch input; these `scrub` numbers add a second,
+// independent layer of lag on top of that smoothed position, so every
+// staged reveal, statement wipe and morph value eases into place with its
+// own small trail instead of following scroll pixel-for-pixel. Used in
+// place of `scrub: true` everywhere a tween's *value* (not a pin's
+// position, which always stays scroll-exact) is being driven.
+const SCRUB_WEIGHT = 0.6;
+const SCRUB_WEIGHT_HEAVY = 0.85;
+
+// Pin lengths (in extra viewports) for the pinned scenes — shared between
+// the reveal choreography and the director beats so the two can never drift
+// apart. Weight ≠ duration: a scene earns its length with the HOLD, never
+// with anticipation. Every scene reveals quickly (everything the visitor
+// needs is on screen by roughly the pin's midpoint) and then stays — the
+// remaining distance exists to appreciate the work, not to unlock it. The
+// hold is never a stop, though: the world keeps breathing underneath it
+// (see BackgroundScene's ambient layer) — only the scroll-tied choreography
+// settles, never the world itself.
+//
+// Motion hierarchy: the flagship owns the longest scene on the page; the
+// second project gets a much lighter pin that exists only to guarantee its
+// description can never be scrolled past unread — minimal ceremony.
+const PROFILE_PIN_VIEWPORTS = 1.9;
+const FLAGSHIP_PIN_VIEWPORTS = 2.4;
+const PROJECT2_PIN_VIEWPORTS = 1.4;
 
 const HERO_LINES = [
   'HIGH-PERFORMANCE',
@@ -63,6 +92,7 @@ const PROJECTS = [
   {
     id: 'buongesto',
     title: 'Buongesto',
+    tagline: 'Interactive WebGL Experience',
     video: '/buongesto-horizontal.mp4',
     description:
       'Crowdfunding infrastructure rendering 100k+ interactive blocks at 60fps. React + Three.js layout engine with unified scroll, physics, and GPU batching for high-density node synchronization.',
@@ -70,51 +100,140 @@ const PROJECTS = [
   {
     id: 'deckforge',
     title: 'Deckforge',
+    tagline: 'Real-Time Spatial Computation',
     video: '/deckforge-horizontal.mp4',
     description:
-      'Spatial computation platform for real-time architectural visualization. Custom scene graph, instanced geometry pipeline, and scroll-synced camera choreography across 40k+ structural nodes.',
+      'Custom scene graph, instanced geometry pipeline, and scroll-synced camera choreography.',
   },
 ];
 
-function ProjectCard({ project, reducedMotion }) {
+// The three statements — pacing devices, not content. Each is an *empty*
+// scroll runway in the page flow hosting a director beat (see
+// src/systems/director.js); the visible statement lives on the fixed layer
+// BEHIND the WebGL canvas and is uncovered out of the negative space the
+// world opens for it. No numbers, no identity, no slogans: three short
+// sentences, each placed where anticipation is needed — never competing
+// with the projects they separate.
+//
+// The story is proof-first: the visitor sees the work before they meet the
+// person. Only once both projects have landed does the page turn inward.
+//
+//   'Not just code.'      hero → the flagship        (curiosity → proof)
+//   'Selected work.'      flagship → project 02       (proof, continuing)
+//   'Built to solve.'     project 02 → the person      (proof → why)
+const BRIDGES = {
+  code: { text: 'Not just code.' },
+  work: { text: 'Selected work.' },
+  solve: { text: 'Built to solve.' },
+};
+
+function BridgeRunway({ id, text }) {
   return (
-    <article
-      className="flex flex-col gap-6 p-6 md:p-12 bg-white/70 backdrop-blur-xl border border-neutral-300 rounded-3xl relative z-10 w-full shadow-2xl max-h-[75svh] overflow-hidden"
-      data-project={project.id}
+    <div
+      // Short by design — a beat, not a chapter: long enough for the
+      // director grammar (anticipation → compression → reveal → hold →
+      // release) to read clearly, never long enough for three plain words
+      // to feel like they're occupying real estate the projects should own.
+      className="bridge relative flex min-h-[100dvh] w-full items-center justify-center md:min-h-[115dvh]"
+      data-bridge={id}
     >
-      {/* Title + description: the part that can legitimately overflow on a
-          short viewport, so it scrolls internally instead of pushing the
-          card taller than the (possibly pinned) section. overscroll-contain
-          stops that internal scroll from bleeding into the page scroll.
-          min-h-0 is load-bearing: flex items default to min-height:auto (their
-          content's natural size), so without it this div refuses to shrink
-          below the title+description height, the card grows past max-h, and
-          the outer overflow-hidden clips it instead of this div scrolling. */}
-      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain p-6 md:p-10">
-        <h2 className="text-[clamp(3rem,6vw,5rem)] font-bold leading-none uppercase tracking-tight break-words">
-          {project.title}
-        </h2>
+      {/* Real copy for screen readers; the visible twin on the statement
+          layer is aria-hidden and purely visual. */}
+      <p className="sr-only">{text}</p>
 
-        <p className="text-lg md:text-xl font-medium max-w-3xl text-neutral-800 leading-relaxed break-words">
-          {project.description}
-        </p>
-      </div>
+      {/* Static fallback, shown only under prefers-reduced-motion (the fixed
+          statement layer is display:none there — see index.css). */}
+      <p className="bridge__static statement-type text-center" aria-hidden="true">
+        {text}
+      </p>
+    </div>
+  );
+}
 
-      {/* Capped so a wide, horizontal video can never dominate the card's
-          height budget at the title's expense — aspect-video gives it a
-          predictable box, max-h keeps that box small on short viewports. */}
-      <div className="aspect-video w-full max-h-[38svh] mt-4 shrink-0 overflow-hidden rounded-xl border border-neutral-200 shadow-lg">
-        <video
-          src={project.video}
-          aria-label={`${project.title} — project preview`}
-          autoPlay={!reducedMotion}
-          controls={reducedMotion}
-          loop
-          muted
-          playsInline
-          preload={reducedMotion ? 'metadata' : 'none'}
-          className="w-full h-full object-cover"
-        />
+// The statement layer: one fixed, full-viewport overlay stacked BETWEEN the
+// white reveal background (z -15) and the WebGL canvas (z -10), so the
+// wireframe world literally draws over the letters — the text exists inside
+// the world, not above it. All statements overlap at viewport center; only
+// the active beat's statement is visible (fully clipped otherwise).
+function StatementLayer() {
+  return (
+    <div
+      className="statement-layer fixed inset-0 pointer-events-none overflow-hidden"
+      style={{ zIndex: -12 }}
+      aria-hidden="true"
+    >
+      {Object.entries(BRIDGES).map(([key, bridge]) => (
+        <div
+          key={key}
+          className="statement absolute inset-0 flex flex-col items-center justify-center px-[clamp(1.5rem,4vw,4rem)] text-center"
+          data-statement={key}
+        >
+          <span className="statement__line statement-type">{bridge.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// The project itself is the interface — the video is never gated behind
+// scroll: it is simply present and already playing the moment its section
+// arrives, at its own intended aspect ratio (w-auto/h-auto + max-w/max-h
+// let it shrink to fit without ever cropping a frame). Only the identity
+// label and the explanation are staged (see addProjectReveal below) —
+// uncovered early while the video keeps the frame, in the order a product
+// launch earns attention: watch, learn what it is, learn why it matters —
+// and then given a long hold to simply be watched.
+//
+// The explanation lives in a glass panel attached to the video's left edge
+// (shared w-fit column ties the two together): a designed annotation of the
+// footage, readable over the wireframe world — not a floating content box.
+function ProjectReveal({ project, reducedMotion }) {
+  return (
+    <article className="project flex w-full flex-col items-center" data-project={project.id}>
+      {/* w-fit: this column shrink-wraps to the video's rendered box, so
+          both the label overlay and the annotation panel below align with
+          the video's real edges — the panel is attached, never floating. */}
+      <div className="flex w-fit max-w-full flex-col items-start">
+        <div className="relative max-w-full overflow-hidden rounded-xl md:rounded-2xl">
+          <video
+            src={project.video}
+            aria-label={`${project.title} — project preview`}
+            controls={reducedMotion}
+            loop
+            muted
+            playsInline
+            preload="metadata"
+            // Playback itself is driven by the lead-time IntersectionObserver
+            // below (not the autoplay attribute) — it is already rolling
+            // well before the section reaches the viewport, without forcing
+            // every project video to buffer from the moment the page loads.
+            className="project__video block h-auto max-h-[36svh] w-auto max-w-full md:max-h-[48svh]"
+          />
+
+          {/* Bottom-left identity label — the "title" moment, deliberately
+              small: named after the video has already held the frame, never
+              competing with it. */}
+          <div className="project__label pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-1 bg-gradient-to-t from-black/65 via-black/20 to-transparent px-[clamp(1rem,3vw,2rem)] py-[clamp(0.85rem,2.4vw,1.5rem)]">
+            <span className="project__eyebrow text-white/85">{project.eyebrow}</span>
+            <span className="text-[clamp(1.3rem,2.8vw,2.1rem)] font-bold uppercase leading-none tracking-tight text-white">
+              {project.title}
+            </span>
+            {project.tagline && (
+              <span className="text-[clamp(0.8rem,1.5vw,1rem)] font-medium normal-case tracking-normal text-white/75">
+                {project.tagline}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Glass annotation panel — same material language as the profile
+            and footer cards. Readability over novelty: solid enough glass
+            that the wireframe world never fights the copy. */}
+        <div className="project__desc mt-4 max-w-3xl rounded-2xl border border-neutral-300 bg-white/75 px-[clamp(1.25rem,2.5vw,2rem)] py-[clamp(1rem,2vw,1.5rem)] shadow-xl backdrop-blur-xl md:mt-5">
+          <p className="max-h-[22svh] overflow-y-auto overscroll-contain text-base font-medium leading-relaxed text-neutral-800 break-words md:text-lg">
+            {project.description}
+          </p>
+        </div>
       </div>
     </article>
   );
@@ -129,13 +248,21 @@ export default function Portfolio() {
   const footerProgressRef = useRef(0);
   const profileTriggerRef = useRef(null);
   const profileImgRef = useRef(null);
-  // Wraps the Project 1 index label + card — the section that gets pinned
-  // for the portfolio's longest, most deliberate scroll scene (see the
-  // "Morph targets" effect below).
+  // Wraps the flagship project — the section that gets pinned for the
+  // portfolio's longest, most deliberate scroll scene (see addProjectReveal
+  // in the "Morph targets" effect below).
   const project1TriggerRef = useRef(null);
-  // Registry read by the WebGL scene each frame: every glass card that the
-  // hero cube can morph into (see src/systems/cubeMorph.js).
+  // Wraps project 2 — a much lighter pin whose only job is guaranteeing the
+  // explanation can never be scrolled past unread.
+  const project2TriggerRef = useRef(null);
+  // Registry read by the WebGL scene each frame: every glass card the hero
+  // cube can morph into (see src/systems/cubeMorph.js). Projects are
+  // deliberately not on this list — no card, no cube hand-off there.
   const morphTargetsRef = useRef([]);
+  // Director bus (see src/systems/director.js): every narrative beat —
+  // statement bridges, the two moments and the finale — the WebGL scene
+  // reads per frame to derive calm / compression / energy and the camera lean.
+  const beatsRef = useRef([]);
 
   const prefersReducedMotion = useMediaQuery(MQ_REDUCED_MOTION);
 
@@ -164,23 +291,73 @@ export default function Portfolio() {
     return () => window.removeEventListener('load', refresh);
   }, []);
 
+  // Project videos: engaged with lead time, not from mount. `preload`
+  // stays light (metadata only) so nothing streams while the visitor is
+  // still in the hero, but a generous rootMargin starts real playback well
+  // before each project reaches the viewport — the same "arrive already in
+  // motion" lead-time idea the idle hero cube uses (see
+  // restPresenceForRect in src/systems/cubeMorph.js) — so the video is
+  // already rolling, not just visible, the moment it's seen. Paused again
+  // once truly out of view to hand the bandwidth back.
+  useEffect(() => {
+    const app = appRef.current;
+    if (!app || prefersReducedMotion) return;
+
+    const videos = Array.from(app.querySelectorAll('.project__video'));
+    if (videos.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (observed) => {
+        observed.forEach((entry) => {
+          const video = entry.target;
+          if (entry.isIntersecting) {
+            video.play().catch(() => {
+              // Autoplay can still be refused in odd embedding contexts;
+              // the visible <video controls> reduced-motion path already
+              // covers users who need an explicit play affordance.
+            });
+          } else {
+            video.pause();
+          }
+        });
+      },
+      { rootMargin: '50% 0px' },
+    );
+
+    videos.forEach((video) => observer.observe(video));
+
+    return () => observer.disconnect();
+  }, [prefersReducedMotion]);
+
   // Lenis + ScrollTrigger wiring and the global scroll progress feed for the canvas.
   useGSAP(
     () => {
       const html = document.documentElement;
       html.classList.add('lenis', 'lenis-smooth');
 
+      // Perceived inertia (see src/systems/resistance.js): inside the
+      // important scenes, physical scroll input is quietly scaled down so
+      // the projects feel like they have weight. Hierarchy: flagship
+      // heaviest, project 2 medium, profile barely, footer none.
+      const resistance = createScrollResistance([
+        { getEl: () => project1TriggerRef.current, multiplier: 0.55 },
+        { getEl: () => project2TriggerRef.current, multiplier: 0.72 },
+        { getEl: () => profileTriggerRef.current, multiplier: 0.88 },
+      ]);
+
       const lenis = new Lenis({
         duration: 2.2,
         easing: (t) => Math.min(1, 1.001 - 2 ** (-10 * t)),
         smoothWheel: true,
+        virtualScroll: resistance.virtualScroll,
       });
 
       // Lenis scrolls the window natively, so ScrollTrigger needs no scrollerProxy —
       // keeping them in sync only requires the update hook + shared ticker.
       lenis.on('scroll', ScrollTrigger.update);
 
-      const onTick = (time) => {
+      const onTick = (time, deltaTime) => {
+        resistance.update(deltaTime / 1000);
         lenis.raf(time * 1000);
       };
 
@@ -206,6 +383,506 @@ export default function Portfolio() {
     { scope: appRef },
   );
 
+  // Morph targets + scroll choreography.
+  //
+  // Not every section deserves the same scroll time: this effect is where
+  // the portfolio's attention hierarchy actually gets built, on top of the
+  // same cube ↔ DOM-card morph used everywhere (see src/systems/cubeMorph.js).
+  //
+  // The story is proof-first — work, then the person behind it — so the
+  // page's own DOM order now is: Hero → Project 1 (flagship) → Project 2
+  // (selected) → Profile → Footer. This effect creates its ScrollTriggers in
+  // that same order for one concrete reason (see below), not for style.
+  //
+  //   Hero       — no entry here: natural scroll, no pin, fast intro.
+  //   Projects   — NOT morph targets: no card, no cube hand-off. The
+  //                flagship still gets a dedicated pin — see
+  //                addProjectReveal below — so the video is guaranteed real
+  //                dwell time, but nothing in it is a glass card animating
+  //                into existence; the video is simply present and already
+  //                playing, only the identity label and copy are staged.
+  //   Profile    — the closing MOMENT, the identity reveal now placed after
+  //                both projects. Pinned ~1.9 viewports: cube → portrait
+  //                morph first, then the text arrives in staged beats while
+  //                still pinned. The visitor already knows the work; this
+  //                is the "why".
+  //   Footer     — continuous, unpinned, lighter. Same morph, no stage.
+  //   Bridges    — not morph targets at all: director beats (a later
+  //                effect) that the WebGL world itself performs; the
+  //                statements live on the layer behind the canvas.
+  //
+  // Each pinned section still uses exactly two ScrollTriggers on the same
+  // element: one pinned (drives the enter, and the hold if any), one natural
+  // (drives the exit once the section later scrolls away unpinned). Both
+  // read live off each other's `.progress` so the morph value is always
+  // correct regardless of which one last fired — no shared mutable state to
+  // get out of sync.
+  //
+  // Deliberately runs before every other scroll-trigger-creating effect in
+  // this component (hero excepted — it has no post-pin dependents): pinning
+  // inserts a pin-spacer that pushes everything after it further down the
+  // page, so any trigger whose element comes after a pin (the statement
+  // bridges, the moment beats, the footer's own animations, and now the
+  // Profile pin itself, which sits after the Project 1 pin in the DOM) must
+  // be created only once the earlier pins already exist — otherwise it
+  // caches its position against the shorter, pre-pin page and never
+  // correctly re-measures later, even across an explicit
+  // ScrollTrigger.refresh(). Concretely: the "Built to solve." statement
+  // would start wiping in while still deep inside the flagship's pin instead
+  // of after it. This is also why the target-creation calls below run in
+  // DOM order (Project 1 → Project 2 → Profile → Footer), not grouped by
+  // breakpoint.
+  useGSAP(
+    () => {
+      const app = appRef.current;
+      if (!app) return;
+
+      const mm = gsap.matchMedia();
+
+      mm.add(
+        {
+          isDesktop: MQ_DESKTOP,
+          isMobile: MQ_MOBILE,
+          reduceMotion: MQ_REDUCED_MOTION,
+        },
+        (media) => {
+          const { isDesktop, reduceMotion } = media.conditions;
+          const entries = [];
+
+          const collectShellAndContent = (card, companionSelector) => {
+            const companion = companionSelector ? app.querySelector(companionSelector) : null;
+            return {
+              shellEls: companion ? [card, companion] : [card],
+              contentEls: Array.from(card.children),
+            };
+          };
+
+          // Continuous, unpinned target — used for Footer always, and as
+          // the reduced-pin mobile fallback for Profile.
+          const addContinuousTarget = (config) => {
+            const card = app.querySelector(config.cardSelector);
+            if (!card) return;
+
+            const { shellEls, contentEls } = collectShellAndContent(
+              card,
+              config.companionSelector,
+            );
+
+            if (reduceMotion) {
+              gsap.set([...shellEls, ...contentEls], { opacity: 1 });
+              return;
+            }
+
+            gsap.set(shellEls, { opacity: 0 });
+
+            const entry = {
+              id: config.id,
+              el: card,
+              progressRef: { current: 0 },
+              enterRange: config.enterRange,
+              exitRange: config.exitRange,
+              radiusPx: parseFloat(getComputedStyle(card).borderTopLeftRadius) || 0,
+            };
+
+            const sync = (self) => {
+              entry.progressRef.current = self.progress;
+              const m = resolveMorphProgress(self.progress, config.enterRange, config.exitRange);
+              gsap.set(shellEls, { opacity: cardRevealAlpha(m) });
+              gsap.set(contentEls, { opacity: contentRevealAlpha(m) });
+            };
+
+            ScrollTrigger.create({
+              trigger: config.trigger ?? card,
+              start: config.start,
+              end: config.end,
+              scrub: SCRUB_WEIGHT,
+              onUpdate: sync,
+              // Restores the correct state after resize or a mid-page reload,
+              // where onUpdate alone would leave stale opacities.
+              onRefresh: sync,
+            });
+
+            entries.push(entry);
+          };
+
+          // Pinned target: `pinSectionEl` is held fixed in the viewport for
+          // `pinViewports` of extra scroll — that pinned window IS the enter
+          // transition (and, if `enterFraction` < 1, a static hold after it
+          // finishes). The exit plays later, unpinned, over `exitStart` →
+          // `exitEnd` of the same element's natural scroll-away.
+          //
+          // `stagedReveals` is what turns a pinned morph into a *moment*:
+          // each { selector, range, y } gets its own sub-window of the pinned
+          // scroll (range is over the raw pin progress, placed after
+          // `enterFraction` so the cube finishes becoming the card first).
+          // Nothing in a core moment fades in: each element is *uncovered* by
+          // a left→right clip-path wipe (same grammar as the statement
+          // bridges), with only a small settle in y for weight. Staged
+          // elements are excluded from the generic content fade and inherit
+          // the morph's own exit (contentRevealAlpha(m)) on the way out.
+          const addPinnedTarget = ({
+            id,
+            cardSelector,
+            companionSelector,
+            pinSectionEl,
+            pinViewports,
+            enterFraction,
+            exitStart,
+            exitEnd,
+            stagedReveals,
+          }) => {
+            const card = app.querySelector(cardSelector);
+            if (!card || !pinSectionEl) return;
+
+            const { shellEls, contentEls } = collectShellAndContent(card, companionSelector);
+
+            const staged = (stagedReveals ?? []).flatMap(
+              ({ selector, range, y = 48, fromScale = 1 }) =>
+                Array.from(app.querySelectorAll(selector)).map((el) => ({
+                  el,
+                  range,
+                  y,
+                  fromScale,
+                })),
+            );
+            const stagedSet = new Set(staged.map((s) => s.el));
+            const morphContentEls = contentEls.filter((el) => !stagedSet.has(el));
+
+            if (reduceMotion) {
+              gsap.set(
+                [...shellEls, ...contentEls, ...staged.map((s) => s.el)],
+                { opacity: 1, clipPath: 'none', clearProps: 'transform' },
+              );
+              return;
+            }
+
+            gsap.set(shellEls, { opacity: 0 });
+            staged.forEach((s) =>
+              gsap.set(s.el, {
+                clipPath: 'inset(0% 100% 0% 0%)',
+                opacity: 1,
+                y: s.y,
+                scale: s.fromScale,
+              }),
+            );
+
+            const entry = {
+              id,
+              el: card,
+              progressRef: { current: 0 },
+              // Both ScrollTriggers below resolve the morph value themselves
+              // and write it straight to progressRef — enterRange [0, 1] is
+              // an identity pass-through so downstream reads (WebGL) don't
+              // need to know this target is special.
+              enterRange: [0, 1],
+              exitRange: null,
+              radiusPx: parseFloat(getComputedStyle(card).borderTopLeftRadius) || 0,
+            };
+
+            let enterTrigger;
+            let exitTrigger;
+
+            const recompute = () => {
+              const enterRaw = enterTrigger ? enterTrigger.progress : 0;
+              const exitProgress = exitTrigger ? exitTrigger.progress : 0;
+              const enterM = phase01(enterRaw, [0, enterFraction]);
+              const m = enterM < 1 ? enterM : 1 - exitProgress;
+
+              entry.progressRef.current = m;
+              gsap.set(shellEls, { opacity: cardRevealAlpha(m) });
+              gsap.set(morphContentEls, { opacity: contentRevealAlpha(m) });
+
+              // Staged elements: wiped open along their own slice of the pin
+              // on the way in (clip-path, no fade), tied to the morph's
+              // content fade on the way out only — the card is returning to
+              // being a cube then, so the fade reads as part of the reversal
+              // (enterRaw is already 1 by that point, so t holds at 1).
+              const stagedExitAlpha = contentRevealAlpha(m);
+              for (let i = 0; i < staged.length; i += 1) {
+                const s = staged[i];
+                const t = smoothstep(phase01(enterRaw, s.range));
+                gsap.set(s.el, {
+                  clipPath: `inset(0% ${(1 - t) * 100}% 0% 0%)`,
+                  opacity: stagedExitAlpha,
+                  y: (1 - t) * s.y,
+                  scale: s.fromScale + (1 - s.fromScale) * t,
+                });
+              }
+            };
+
+            enterTrigger = ScrollTrigger.create({
+              trigger: pinSectionEl,
+              start: 'top top',
+              // Function-based so a resize (address bar, DevTools, etc.)
+              // re-measures the same *number* of viewports, not a stale px value.
+              end: () => `+=${window.innerHeight * pinViewports}`,
+              pin: true,
+              pinSpacing: true,
+              // Lenis carries momentum into the pin point, so without this the
+              // engage can read as a small stutter — anticipatePin smooths it
+              // out, which matters most here since "premium" is the whole point.
+              anticipatePin: 1,
+              scrub: SCRUB_WEIGHT,
+              onUpdate: recompute,
+              onRefresh: recompute,
+            });
+
+            exitTrigger = ScrollTrigger.create({
+              trigger: pinSectionEl,
+              start: exitStart,
+              end: exitEnd,
+              scrub: SCRUB_WEIGHT,
+              onUpdate: recompute,
+              onRefresh: recompute,
+            });
+
+            entries.push(entry);
+          };
+
+          // Project reveal — video-first, no card, no morph registration.
+          // Unlike the targets above, the video is never gated behind an
+          // opacity ramp: it is simply present and already playing the
+          // moment its section arrives. Only the identity label and the
+          // description are staged — uncovered gradually, on their own
+          // slice of scroll, while the video keeps the whole frame. On
+          // desktop the flagship additionally gets a dedicated pin (via
+          // `pinViewports`) purely to guarantee dwell time: nothing here
+          // assembles during it, the hold itself is the point.
+          const addProjectReveal = ({ sectionEl, pinViewports, stagedReveals }) => {
+            if (!sectionEl) return;
+
+            const staged = stagedReveals.flatMap(({ selector, range, y = 20 }) =>
+              Array.from(app.querySelectorAll(selector)).map((el) => ({ el, range, y })),
+            );
+            if (staged.length === 0) return;
+
+            if (reduceMotion) {
+              gsap.set(staged.map((s) => s.el), {
+                opacity: 1,
+                clipPath: 'none',
+                clearProps: 'transform',
+              });
+              return;
+            }
+
+            staged.forEach((s) =>
+              gsap.set(s.el, { clipPath: 'inset(0% 100% 0% 0%)', opacity: 1, y: s.y }),
+            );
+
+            const write = (rawProgress) => {
+              for (let i = 0; i < staged.length; i += 1) {
+                const s = staged[i];
+                const t = smoothstep(phase01(rawProgress, s.range));
+                gsap.set(s.el, {
+                  clipPath: `inset(0% ${(1 - t) * 100}% 0% 0%)`,
+                  y: (1 - t) * s.y,
+                });
+              }
+            };
+
+            if (pinViewports) {
+              ScrollTrigger.create({
+                trigger: sectionEl,
+                start: 'top top',
+                end: () => `+=${window.innerHeight * pinViewports}`,
+                pin: true,
+                pinSpacing: true,
+                anticipatePin: 1,
+                scrub: SCRUB_WEIGHT,
+                onUpdate: (self) => write(self.progress),
+                onRefresh: (self) => write(self.progress),
+              });
+            } else {
+              ScrollTrigger.create({
+                trigger: sectionEl,
+                start: 'top 80%',
+                end: 'bottom 25%',
+                scrub: SCRUB_WEIGHT,
+                onUpdate: (self) => write(self.progress),
+                onRefresh: (self) => write(self.progress),
+              });
+            }
+          };
+
+          // MOMENT — The Flagship. The opening proof and the longest scene
+          // in the portfolio. Reveal quickly, stay longer, leave gracefully:
+          // a brief arrival (video alone — just long enough to create
+          // curiosity), then the title, then the glass explanation — all of
+          // it on screen by roughly the pin's midpoint. Everything after
+          // that is HOLD: the longest part of the scene, nothing left to
+          // unlock, time to simply watch. The visitor never waits for
+          // information; the remaining distance exists to appreciate it.
+          if (isDesktop) {
+            addProjectReveal({
+              sectionEl: project1TriggerRef.current,
+              pinViewports: FLAGSHIP_PIN_VIEWPORTS,
+              stagedReveals: [
+                {
+                  selector: '[data-project="buongesto"] .project__label',
+                  range: [0.22, 0.32],
+                  y: 18,
+                },
+                // A real settle between title and explanation — one focal
+                // point at a time; the gap is wide enough that the scrub
+                // lag can never blur the two reveals into one event.
+                {
+                  selector: '[data-project="buongesto"] .project__desc',
+                  range: [0.44, 0.56],
+                  y: 14,
+                },
+              ],
+            });
+          } else {
+            // Mobile: pinning fights address-bar resize and touch scroll
+            // expectations, so the flagship falls back to a continuous pass
+            // — with reveals early enough in the pass that everything is
+            // readable well before the section is centered, and nothing
+            // can be scrolled past unseen.
+            addProjectReveal({
+              sectionEl: project1TriggerRef.current,
+              stagedReveals: [
+                // Starts once the preceding statement has released — one
+                // focal point at a time — but still completes while the
+                // video is only approaching center: early payoff, and the
+                // rest of the pass is spent with the full scene.
+                {
+                  selector: '[data-project="buongesto"] .project__label',
+                  range: [0.3, 0.44],
+                  y: 18,
+                },
+                {
+                  selector: '[data-project="buongesto"] .project__desc',
+                  range: [0.48, 0.62],
+                  y: 14,
+                },
+              ],
+            });
+          }
+
+          // Project 2 — Selected Work. Two stars, not five: same
+          // video-first grammar, but compressed — a much shorter pin whose
+          // only job is guaranteeing the explanation is read, reveals even
+          // earlier, minimal ceremony. Proof continuing, not competing.
+          if (isDesktop) {
+            addProjectReveal({
+              sectionEl: project2TriggerRef.current,
+              pinViewports: PROJECT2_PIN_VIEWPORTS,
+              stagedReveals: [
+                {
+                  selector: '[data-project="deckforge"] .project__label',
+                  range: [0.16, 0.28],
+                  y: 18,
+                },
+                // The settle between title and panel is proportionally wider
+                // here than on the flagship: the pin is short, so a narrow
+                // gap would blur through the scrub lag into one event.
+                {
+                  selector: '[data-project="deckforge"] .project__desc',
+                  range: [0.4, 0.52],
+                  y: 14,
+                },
+              ],
+            });
+          } else {
+            addProjectReveal({
+              sectionEl: project2TriggerRef.current,
+              stagedReveals: [
+                {
+                  selector: '[data-project="deckforge"] .project__label',
+                  range: [0.3, 0.44],
+                  y: 18,
+                },
+                {
+                  selector: '[data-project="deckforge"] .project__desc',
+                  range: [0.48, 0.62],
+                  y: 14,
+                },
+              ],
+            });
+          }
+
+          // MOMENT — The Person. The closing beat, now that the work has
+          // already spoken. Two stages inside one pin: the cube becomes the
+          // portrait (first ~55% of the pin), and only then do the words
+          // arrive — card, then title, then copy — each rising on its own
+          // slice of scroll, calmer and slower than either project moment
+          // (see the gentler compressionScale on this beat below).
+          if (isDesktop) {
+            addPinnedTarget({
+              id: 'profile',
+              cardSelector: '.profile-photo-dom',
+              pinSectionEl: profileTriggerRef.current,
+              pinViewports: PROFILE_PIN_VIEWPORTS,
+              enterFraction: 0.5,
+              // The card's actual fade-to-invisible only spans the first
+              // ~38% of this range (cardRevealAlpha only reacts to morph
+              // m ∈ [0.62, 0.94]), so it must fully resolve before the
+              // footer's own reveal begins — otherwise the white reveal
+              // wipes in while the profile card is still visibly fading out
+              // behind it.
+              exitStart: 'bottom 75%',
+              exitEnd: 'bottom 25%',
+              // Early payoff here too: the words are fully on screen by
+              // ~78% of the pin, leaving a real hold — the visitor spends
+              // the tail of the scene with the person, not waiting for the
+              // last line to unlock.
+              stagedReveals: [
+                { selector: '.profile-text-dom', range: [0.52, 0.66], y: 26 },
+                { selector: '.profile-text-dom h2', range: [0.56, 0.7], y: 16 },
+                { selector: '.profile-text-dom p', range: [0.62, 0.78], y: 12 },
+              ],
+            });
+          } else {
+            // Mobile: pinning fights address-bar resize and touch scroll
+            // expectations, so the profile falls back to a continuous
+            // treatment — present, not staged.
+            addContinuousTarget({
+              id: 'profile',
+              cardSelector: '.profile-photo-dom',
+              companionSelector: '.profile-text-dom',
+              trigger: profileTriggerRef.current,
+              start: 'top 35%',
+              end: 'bottom 70%',
+              enterRange: [0, 0.46],
+              exitRange: [0.66, 1],
+            });
+          }
+
+          // Footer: never pinned, reveal only — scroll ends with it fully
+          // visible, so there is no exit, the cube's final state IS the card.
+          addContinuousTarget({
+            id: 'footer-ai',
+            cardSelector: '.footer-ai-card',
+            trigger: footerRef.current,
+            start: 'top bottom',
+            end: 'top top',
+            enterRange: [0.28, 1],
+            exitRange: null,
+          });
+
+          morphTargetsRef.current = entries;
+
+          // Mount refresh: this is only for internal consistency among the
+          // targets just created above (e.g. border-radius reads happening
+          // before layout fully settles) — it runs before any later effect
+          // (hero excepted) creates its own triggers, so those measure
+          // correctly against the pins on their first pass and never need
+          // fixing up.
+          ScrollTrigger.refresh();
+
+          return () => {
+            morphTargetsRef.current = [];
+          };
+        },
+      );
+
+      return () => {
+        mm.revert();
+      };
+    },
+    { scope: appRef },
+  );
+
   // Hero entrance animation (one-shot, not scroll-driven).
   useGSAP(
     () => {
@@ -214,6 +891,9 @@ export default function Portfolio() {
 
       const lines = hero.querySelectorAll('.hero__line');
       const eyebrow = hero.querySelector('.hero__eyebrow');
+      const cue = hero.querySelector('.hero__cue');
+      const cueInner = hero.querySelector('.hero__cue-inner');
+      const cueLine = hero.querySelector('.hero__cue-line');
 
       const mm = gsap.matchMedia();
 
@@ -227,7 +907,11 @@ export default function Portfolio() {
           const { isDesktop, reduceMotion } = media.conditions;
 
           if (reduceMotion) {
-            gsap.set([lines, eyebrow], { y: 0, opacity: 1, clearProps: 'transform' });
+            gsap.set([lines, eyebrow, cueInner], {
+              y: 0,
+              opacity: 1,
+              clearProps: 'transform',
+            });
             return;
           }
 
@@ -237,6 +921,7 @@ export default function Portfolio() {
 
           gsap.set(lines, { y: lineY, opacity: 0 });
           gsap.set(eyebrow, { y: 24, opacity: 0 });
+          gsap.set(cueInner, { y: 12, opacity: 0 });
 
           gsap
             .timeline({ delay: 0.12 })
@@ -251,7 +936,53 @@ export default function Portfolio() {
               eyebrow,
               { y: 0, opacity: 1, duration: 0.7, ease: 'power3.out' },
               0,
+            )
+            // The cue arrives last, once the headline has landed — a quiet
+            // invitation rather than another element competing for attention.
+            .to(
+              cueInner,
+              { y: 0, opacity: 1, duration: 0.9, ease: 'power2.out' },
+              0.95,
             );
+
+          // Idle breathing on the cue line — slow, weighted, never mechanical.
+          gsap.fromTo(
+            cueLine,
+            { scaleY: 0.3, transformOrigin: 'top center' },
+            {
+              scaleY: 1,
+              duration: 1.5,
+              ease: 'power2.inOut',
+              repeat: -1,
+              yoyo: true,
+              delay: 1.4,
+            },
+          );
+
+          // Cinematic exit: as the hero scrolls away, each headline line is
+          // swallowed by its own mask at a slightly different rate (yPercent
+          // composes with the entrance's y px, so the two never fight), and
+          // the cue dissolves the instant intent to scroll is expressed.
+          // Anticipation for Bridge 01 starts here, not at the bridge.
+          gsap
+            .timeline({
+              scrollTrigger: {
+                trigger: hero,
+                start: 'top top',
+                end: 'bottom top',
+                scrub: SCRUB_WEIGHT,
+              },
+            })
+            .to(
+              lines,
+              {
+                yPercent: (i) => -(16 + i * 10),
+                duration: 1,
+                ease: 'power1.in',
+              },
+              0,
+            )
+            .to(cue, { autoAlpha: 0, duration: 0.22, ease: 'power1.out' }, 0);
         },
       );
 
@@ -350,48 +1081,29 @@ export default function Portfolio() {
           }
 
           if (isDesktop) {
-            gsap.set(headline, { y: 80, opacity: 0 });
-            gsap.set(cta, { y: 48, opacity: 0 });
-            gsap.set(logo, {
-              scale: 0.82,
-              opacity: 0,
-              transformOrigin: 'right center',
-            });
+            // The footer is the quietest moment on the page — one star of
+            // the motion hierarchy. The white reveal (the clip-path opening
+            // behind everything) IS the event; the content itself just
+            // rises gently into place as one gesture. No scale ceremony,
+            // no per-element choreography: by this point the site has said
+            // everything, and stillness closes it better than motion.
+            gsap.set([headline, cta, logo], { y: 28, opacity: 0 });
 
-            gsap
-              .timeline({
-                scrollTrigger: {
-                  trigger: footer,
-                  start: 'top 85%',
-                  toggleActions: 'play none none reverse',
-                },
-              })
-              .to(headline, {
-                y: 0,
-                opacity: 1,
-                duration: 1.05,
-                ease: 'power4.out',
-              })
-              .to(
-                cta,
-                { y: 0, opacity: 1, duration: 0.85, ease: 'power3.out' },
-                '-=0.55',
-              )
-              .to(
-                logo,
-                { scale: 1, opacity: 1, duration: 1.25, ease: 'power4.out' },
-                '-=0.65',
-              );
+            gsap.to([headline, cta, logo], {
+              y: 0,
+              opacity: 1,
+              duration: 0.9,
+              stagger: 0.08,
+              ease: 'power3.out',
+              scrollTrigger: {
+                trigger: footer,
+                start: 'top 85%',
+                toggleActions: 'play none none reverse',
+              },
+            });
           }
         },
       );
-
-      // No refresh here: the morph-targets effect below still has to create
-      // the Profile / Project 1 pins, which insert pin-spacers that change
-      // the total document height. Refreshing before that exists would lock
-      // this trigger's start/end to a shorter, pre-pin page — exactly the
-      // "footer reveal fires too early" bug. The authoritative refresh runs
-      // once, at the very end of that later effect.
 
       return () => {
         ScrollTrigger.removeEventListener('refreshInit', syncFooterHeight);
@@ -403,28 +1115,20 @@ export default function Portfolio() {
     { scope: appRef },
   );
 
-  // Morph targets + scroll choreography.
+  // Director beats — the narrative bus both layers read.
   //
-  // Not every section deserves the same scroll time: this effect is where
-  // the portfolio's attention hierarchy actually gets built, on top of the
-  // same cube ↔ DOM-card morph used everywhere (see src/systems/cubeMorph.js).
+  // Bridges: each empty runway drives one beat. The DOM side (here) writes
+  // the statement wipe — clip-path only, uncovered center-outward from the
+  // negative space the world just opened, never faded or slid — and the
+  // release parallax (the world moves past the text; the text never
+  // "disappears"). The WebGL side reads the same progress ref to calm and
+  // compress the cluster and to lean the camera in. One number drives both
+  // layers, so cause and effect can never desync.
   //
-  //   Hero              — no entry here: natural scroll, no pin, fast intro.
-  //   Profile           — the WEBGL identity moment. Pinned just long enough
-  //                        (~1 viewport) for the cube → portrait morph to
-  //                        read as a transformation rather than a cut.
-  //   Project 1         — the headline showcase. Pinned the longest: a short
-  //                        enter, then a deliberate hold with nothing left to
-  //                        animate — scroll distance, not slowed animation,
-  //                        is what buys it the attention.
-  //   Project 2, Footer — continuous, unpinned, lighter. Same morph, no stage.
-  //
-  // Each pinned section still uses exactly two ScrollTriggers on the same
-  // element: one pinned (drives the enter, and the hold if any), one natural
-  // (drives the exit once the section later scrolls away unpinned). Both
-  // read live off each other's `.progress` so the morph value is always
-  // correct regardless of which one last fired — no shared mutable state to
-  // get out of sync.
+  // Moments: the profile, flagship and footer register silent beats with no
+  // DOM writes at all — they exist purely so the world falls quiet during
+  // the approach (anticipation), stays quiet through the morph, and fires an
+  // energy impulse when the moment has been fully experienced (release).
   useGSAP(
     () => {
       const app = appRef.current;
@@ -440,235 +1144,167 @@ export default function Portfolio() {
         },
         (media) => {
           const { isDesktop, reduceMotion } = media.conditions;
-          const entries = [];
 
-          const collectShellAndContent = (card, companionSelector) => {
-            const companion = companionSelector ? app.querySelector(companionSelector) : null;
-            return {
-              shellEls: companion ? [card, companion] : [card],
-              contentEls: Array.from(card.children),
-            };
-          };
+          // Reduced motion: no beats, no fixed layer (hidden via CSS); the
+          // static statement copies in the runways are shown instead.
+          if (reduceMotion) return;
 
-          // Continuous, unpinned target — used for Project 2 / Footer always,
-          // and as the reduced-pin mobile fallback for Profile / Project 1.
-          const addContinuousTarget = (config) => {
-            const card = app.querySelector(config.cardSelector);
-            if (!card) return;
+          const beats = [];
 
-            const { shellEls, contentEls } = collectShellAndContent(
-              card,
-              config.companionSelector,
-            );
+          // Temporal order along the page — NOT creation order — is what the
+          // WebGL camera language (see BackgroundScene) alternates its lean
+          // pattern by, so consecutive *beats-as-actually-experienced* never
+          // repeat the same subtle gesture: bridge-code(0) → moment-flagship
+          // (1) → bridge-work(2) → moment-deckforge(3) → bridge-solve(4) →
+          // moment-profile(5) → moment-footer(6).
+          const BEAT_ORDER = { code: 0, work: 2, solve: 4 };
 
-            if (reduceMotion) {
-              gsap.set([...shellEls, ...contentEls], { opacity: 1 });
-              return;
-            }
+          app.querySelectorAll('.bridge').forEach((runway) => {
+            const key = runway.dataset.bridge;
+            const statement = app.querySelector(`.statement[data-statement="${key}"]`);
+            if (!statement) return;
 
-            gsap.set(shellEls, { opacity: 0 });
+            const lineEl = statement.querySelector('.statement__line');
+
+            gsap.set(lineEl, { clipPath: 'inset(0% 50% 0% 50%)' });
+            gsap.set(statement, { visibility: 'hidden', yPercent: 0, scale: 1 });
 
             const entry = {
-              id: config.id,
-              el: card,
+              id: `bridge-${key}`,
+              kind: 'bridge',
+              order: BEAT_ORDER[key],
               progressRef: { current: 0 },
-              enterRange: config.enterRange,
-              exitRange: config.exitRange,
-              radiusPx: parseFloat(getComputedStyle(card).borderTopLeftRadius) || 0,
+              ...BRIDGE_BEAT,
             };
 
-            const sync = (self) => {
-              entry.progressRef.current = self.progress;
-              const m = resolveMorphProgress(self.progress, config.enterRange, config.exitRange);
-              gsap.set(shellEls, { opacity: cardRevealAlpha(m) });
-              gsap.set(contentEls, { opacity: contentRevealAlpha(m) });
+            const write = (self) => {
+              const p = self.progress;
+              entry.progressRef.current = p;
+
+              // Uncovered center-outward — out of the exact negative space
+              // the cluster cleared during compression. The statement is a
+              // consequence of the world's motion, not an arrival.
+              const side = (1 - statementWipe(p)) * 50;
+              gsap.set(lineEl, { clipPath: `inset(0% ${side}% 0% ${side}%)` });
+
+              // Release: the statement rejoins the world's flow — it moves up
+              // and away like page content (yPercent of the full-viewport
+              // statement ≈ viewport units), fully off-screen by p = 1, so
+              // the visibility latch below never cuts anything visible.
+              // Translate + scale only; the text is never faded out.
+              const exit = beatExit(p);
+              gsap.set(statement, {
+                visibility: p > 0.001 && p < 0.999 ? 'visible' : 'hidden',
+                yPercent: -exit * 72,
+                scale: 1 - exit * 0.05,
+              });
             };
 
             ScrollTrigger.create({
-              trigger: config.trigger ?? card,
-              start: config.start,
-              end: config.end,
-              scrub: true,
-              onUpdate: sync,
-              // Restores the correct state after resize or a mid-page reload,
-              // where onUpdate alone would leave stale opacities.
-              onRefresh: sync,
+              trigger: runway,
+              start: 'top 85%',
+              end: 'bottom 15%',
+              // Heaviest lag on the page — the statement is typography, and
+              // typography should feel like it has the most inertia of
+              // anything the visitor sees.
+              scrub: SCRUB_WEIGHT_HEAVY,
+              onUpdate: write,
+              onRefresh: write,
             });
 
-            entries.push(entry);
-          };
+            beats.push(entry);
+          });
 
-          // Pinned target: `pinSectionEl` is held fixed in the viewport for
-          // `pinViewports` of extra scroll — that pinned window IS the enter
-          // transition (and, if `enterFraction` < 1, a static hold after it
-          // finishes). The exit plays later, unpinned, over `exitStart` →
-          // `exitEnd` of the same element's natural scroll-away.
-          const addPinnedTarget = ({
-            id,
-            cardSelector,
-            companionSelector,
-            pinSectionEl,
-            pinViewports,
-            enterFraction,
-            exitStart,
-            exitEnd,
-          }) => {
-            const card = app.querySelector(cardSelector);
-            if (!card || !pinSectionEl) return;
-
-            const { shellEls, contentEls } = collectShellAndContent(card, companionSelector);
-
-            if (reduceMotion) {
-              gsap.set([...shellEls, ...contentEls], { opacity: 1 });
-              return;
-            }
-
-            gsap.set(shellEls, { opacity: 0 });
+          // Moment beats: silence on approach, release impulse at the end.
+          // On desktop the beat spans approach + the entire pinned window
+          // (1 viewport of approach + `pinViewports` of pin), so calm holds
+          // through the whole morph and releases just before the unpin.
+          const addMomentBeat = (id, el, pinViewports, order, compressionScale = 0.45) => {
+            if (!el) return;
 
             const entry = {
               id,
-              el: card,
+              kind: 'moment',
+              order,
               progressRef: { current: 0 },
-              // Both ScrollTriggers below resolve the morph value themselves
-              // and write it straight to progressRef — enterRange [0, 1] is
-              // an identity pass-through so downstream reads (WebGL) don't
-              // need to know this target is special.
-              enterRange: [0, 1],
-              exitRange: null,
-              radiusPx: parseFloat(getComputedStyle(card).borderTopLeftRadius) || 0,
+              compressionScale,
             };
 
-            let enterTrigger;
-            let exitTrigger;
+            let end;
+            if (isDesktop) {
+              const total = 1 + pinViewports;
+              entry.calmIn = [0.05, Math.min(0.9 / total, 0.5)];
+              entry.calmOut = [0.92, 1];
+              entry.releaseAt = 0.92;
+              end = () => `+=${window.innerHeight * total}`;
+            } else {
+              // No pin on mobile: the beat rides the section's natural pass.
+              entry.calmIn = [0.05, 0.35];
+              entry.calmOut = [0.6, 0.9];
+              entry.releaseAt = 0.6;
+              end = 'bottom center';
+            }
 
-            const recompute = () => {
-              const enterRaw = enterTrigger ? enterTrigger.progress : 0;
-              const exitProgress = exitTrigger ? exitTrigger.progress : 0;
-              const enterM = phase01(enterRaw, [0, enterFraction]);
-              const m = enterM < 1 ? enterM : 1 - exitProgress;
-
-              entry.progressRef.current = m;
-              gsap.set(shellEls, { opacity: cardRevealAlpha(m) });
-              gsap.set(contentEls, { opacity: contentRevealAlpha(m) });
+            const write = (self) => {
+              entry.progressRef.current = self.progress;
             };
 
-            enterTrigger = ScrollTrigger.create({
-              trigger: pinSectionEl,
-              start: 'top top',
-              // Function-based so a resize (address bar, DevTools, etc.)
-              // re-measures the same *number* of viewports, not a stale px value.
-              end: () => `+=${window.innerHeight * pinViewports}`,
-              pin: true,
-              pinSpacing: true,
-              // Lenis carries momentum into the pin point, so without this the
-              // engage can read as a small stutter — anticipatePin smooths it
-              // out, which matters most here since "premium" is the whole point.
-              anticipatePin: 1,
+            ScrollTrigger.create({
+              trigger: el,
+              start: 'top bottom',
+              end,
               scrub: true,
-              onUpdate: recompute,
-              onRefresh: recompute,
+              onUpdate: write,
+              onRefresh: write,
             });
 
-            exitTrigger = ScrollTrigger.create({
-              trigger: pinSectionEl,
-              start: exitStart,
-              end: exitEnd,
-              scrub: true,
-              onUpdate: recompute,
-              onRefresh: recompute,
-            });
-
-            entries.push(entry);
+            beats.push(entry);
           };
 
-          if (isDesktop) {
-            // Profile: the pin is deliberately short — it exists only to let
-            // the cube → portrait morph read as a transformation. No hold:
-            // enterFraction 1 means the entire (short) pin IS the morph.
-            addPinnedTarget({
-              id: 'profile',
-              cardSelector: '.profile-photo-dom',
-              companionSelector: '.profile-text-dom',
-              pinSectionEl: profileTriggerRef.current,
-              pinViewports: 1,
-              enterFraction: 1,
-              exitStart: 'bottom 65%',
-              exitEnd: 'bottom 15%',
-            });
+          // DOM order matters here too (see the morph-targets effect above).
+          // Motion hierarchy in the compressionScale values: the flagship's
+          // beat recedes the world hardest (it owns the page's motion
+          // budget), project 2 noticeably less (support, not competition),
+          // and the profile gentlest of all — reflective, never as dramatic
+          // as the work it follows.
+          addMomentBeat('moment-flagship', project1TriggerRef.current, FLAGSHIP_PIN_VIEWPORTS, 1);
+          addMomentBeat('moment-deckforge', project2TriggerRef.current, PROJECT2_PIN_VIEWPORTS, 3, 0.35);
+          addMomentBeat('moment-profile', profileTriggerRef.current, PROFILE_PIN_VIEWPORTS, 5, 0.3);
 
-            // Project 1: the longest scene in the portfolio. The morph itself
-            // still finishes quickly (same visual pace as everywhere else) —
-            // enterFraction 0.35 — but the pin keeps going well past that, so
-            // the card sits still and fully formed, undistracted, for most of
-            // the ~2.2 viewports before the page lets go.
-            addPinnedTarget({
-              id: 'project-buongesto',
-              cardSelector: '[data-project="buongesto"]',
-              pinSectionEl: project1TriggerRef.current,
-              pinViewports: 2.2,
-              enterFraction: 0.35,
-              exitStart: 'bottom 75%',
-              exitEnd: 'bottom 25%',
+          // Trust — the finale inherits the same grammar: the world settles
+          // as the white reveal approaches, then releases once the page has
+          // fully opened. No DOM writes; the footer's own choreography (the
+          // clip-path reveal, the AI-card morph) is the visible half.
+          const footerEl = footerRef.current;
+          if (footerEl) {
+            const entry = {
+              id: 'moment-footer',
+              kind: 'moment',
+              order: 6,
+              progressRef: { current: 0 },
+              compressionScale: 0.25,
+              calmIn: [0.08, 0.5],
+              calmOut: [0.82, 1],
+              releaseAt: 0.82,
+            };
+            const write = (self) => {
+              entry.progressRef.current = self.progress;
+            };
+            ScrollTrigger.create({
+              trigger: footerEl,
+              start: 'top bottom',
+              end: 'top top',
+              scrub: true,
+              onUpdate: write,
+              onRefresh: write,
             });
-          } else {
-            // Mobile: pinning fights address-bar resize and touch scroll
-            // expectations, so both sections fall back to the same
-            // continuous treatment as Project 2 — present, not staged.
-            addContinuousTarget({
-              id: 'profile',
-              cardSelector: '.profile-photo-dom',
-              companionSelector: '.profile-text-dom',
-              trigger: profileTriggerRef.current,
-              start: 'top 35%',
-              end: 'bottom 70%',
-              enterRange: [0, 0.46],
-              exitRange: [0.66, 1],
-            });
-
-            addContinuousTarget({
-              id: 'project-buongesto',
-              cardSelector: '[data-project="buongesto"]',
-              start: 'top 80%',
-              end: 'bottom 25%',
-              enterRange: [0.14, 0.56],
-              exitRange: [0.68, 0.95],
-            });
+            beats.push(entry);
           }
 
-          // Project 2 stays continuous on every breakpoint — lighter, no
-          // stage of its own, just the same morph passing through it.
-          addContinuousTarget({
-            id: 'project-deckforge',
-            cardSelector: '[data-project="deckforge"]',
-            start: 'top 80%',
-            end: 'bottom 25%',
-            enterRange: [0.14, 0.56],
-            exitRange: [0.68, 0.95],
-          });
-
-          // Footer: never pinned, reveal only — scroll ends with it fully
-          // visible, so there is no exit, the cube's final state IS the card.
-          addContinuousTarget({
-            id: 'footer-ai',
-            cardSelector: '.footer-ai-card',
-            trigger: footerRef.current,
-            start: 'top bottom',
-            end: 'top top',
-            enterRange: [0.28, 1],
-            exitRange: null,
-          });
-
-          morphTargetsRef.current = entries;
-
-          // Authoritative mount refresh: runs only now, after the Profile /
-          // Project 1 pins above have inserted their pin-spacers, so every
-          // ScrollTrigger on the page — including the footer's white-reveal
-          // and entrance timelines created earlier — re-measures against
-          // the real, final (taller) document instead of a stale one.
-          ScrollTrigger.refresh();
+          beatsRef.current = beats;
 
           return () => {
-            morphTargetsRef.current = [];
+            beatsRef.current = [];
           };
         },
       );
@@ -694,6 +1330,10 @@ export default function Portfolio() {
         aria-hidden="true" 
       />
 
+      {/* Statement layer sits BETWEEN the backgrounds and the canvas: the
+          wireframe world draws over the letters — text inside the world. */}
+      <StatementLayer />
+
       <div className="canvas-layer fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: -10 }} aria-hidden="true">
         <Canvas
           camera={{ position: [0, 0, 6], fov: 42 }}
@@ -704,6 +1344,7 @@ export default function Portfolio() {
             scrollProgressRef={scrollProgressRef}
             footerProgressRef={footerProgressRef}
             morphTargetsRef={morphTargetsRef}
+            beatsRef={beatsRef}
           />
         </Canvas>
       </div>
@@ -729,12 +1370,65 @@ export default function Portfolio() {
               ))}
             </h1>
           </div>
+
+          {/* Scroll cue: outer node owns the scroll-out fade, inner node owns
+              the entrance — no property collisions between the two tweens. */}
+          <div
+            className="hero__cue absolute bottom-[clamp(1.5rem,4vh,3rem)] left-1/2 -translate-x-1/2"
+            aria-hidden="true"
+          >
+            <div className="hero__cue-inner flex flex-col items-center gap-3">
+              <span className="label">SCROLL</span>
+              <span className="hero__cue-line block h-12 w-px bg-neutral-400" />
+            </div>
+          </div>
         </header>
+
+        {/* Curiosity → proof: the first thing a founder should see after the
+            hero is the work itself, not the person behind it. */}
+        <BridgeRunway id="code" text={BRIDGES.code.text} />
+
+        <div className="shell">
+          <section
+            id="work"
+            ref={project1TriggerRef}
+            // h-screen (not min-h-screen) + overflow-hidden: this section is
+            // pinned at top:0 for its scroll scene, so it must never render
+            // taller than one viewport — the video's own max-h caps plus the
+            // description's overflow safety valve (see ProjectReveal) are
+            // what keep the whole assembly inside that budget. Project 2
+            // below isn't pinned, so it keeps min-h-screen — natural
+            // overflow there is harmless.
+            className="work h-screen overflow-hidden flex items-center justify-center w-full py-8 md:py-12"
+          >
+            <ProjectReveal project={PROJECTS[0]} reducedMotion={prefersReducedMotion} />
+          </section>
+        </div>
+
+        {/* Proof, continuing: deceleration into the second project. */}
+        <BridgeRunway id="work" text={BRIDGES.work.text} />
+
+        <div className="shell">
+          <section
+            ref={project2TriggerRef}
+            // Same one-viewport budget as the flagship: this section is also
+            // pinned (much more briefly) on desktop, so it must never render
+            // taller than the viewport it is held in.
+            className="work h-screen overflow-hidden flex items-center justify-center w-full py-8 md:py-12"
+          >
+            <ProjectReveal project={PROJECTS[1]} reducedMotion={prefersReducedMotion} />
+          </section>
+        </div>
+
+        {/* Proof → why: the visitor already knows the work is good. Now they
+            learn who built it and why — the profile is the explanation, not
+            the introduction. */}
+        <BridgeRunway id="solve" text={BRIDGES.solve.text} />
 
         <section
           id="about"
           ref={profileTriggerRef}
-          className="relative flex min-h-[120dvh] md:min-h-[132dvh] w-full items-center px-[clamp(2rem,6vw,6rem)] select-none"
+          className="relative flex min-h-[120dvh] w-full items-center px-[clamp(2rem,6vw,6rem)] select-none md:min-h-screen"
         >
           <div className="flex w-full flex-col gap-12 md:flex-row md:items-center md:gap-[clamp(2rem,5vw,4rem)]">
             <div className="flex w-full justify-center md:w-[40%] md:justify-start">
@@ -756,43 +1450,16 @@ export default function Portfolio() {
                 DIGITAL ENGINEERING.
               </h2>
               <p className="max-w-2xl text-xl font-medium leading-relaxed text-neutral-800 md:text-2xl">
-                I build high-performance web architectures and interactive canvases. No cold
-                outreach. Purely premium inbound positioning for ambitious founders.
+                I build high-performance web architectures and interactive canvases.
               </p>
             </div>
           </div>
         </section>
 
-        <div className="shell">
-          <section
-            id="work"
-            ref={project1TriggerRef}
-            // h-screen (not min-h-screen) + overflow-hidden: this section is
-            // pinned at top:0 for its scroll scene, so it must never render
-            // taller than one viewport — otherwise the extra height pushes
-            // the (flex-centered) card down past the fold instead of
-            // centering it, i.e. exactly the "card sits lower than the
-            // screen while pinned" bug. Project 2 below isn't pinned, so it
-            // keeps min-h-screen — natural overflow there is harmless.
-            className="work h-screen overflow-hidden flex items-center justify-center w-full py-12 md:py-24"
-          >
-            <div className="work__index w-full">
-              <span className="label">Selected case studies</span>
-              <span className="label">01 — 02</span>
-            </div>
-
-            <ProjectCard project={PROJECTS[0]} reducedMotion={prefersReducedMotion} />
-          </section>
-        </div>
-
-        <div className="shell">
-          <section className="work min-h-screen flex items-center justify-center w-full py-12 md:py-24">
-            <ProjectCard project={PROJECTS[1]} reducedMotion={prefersReducedMotion} />
-          </section>
-        </div>
-
-        {/* Spacer di scroll per la transizione del cluster 3D — nessun contenuto */}
-        <div className="transition-cube relative min-h-[100dvh] w-full" aria-hidden="true" />
+        {/* Why → trust: no statement here — the white reveal itself is the
+            transition. This runway only gives the world room to settle
+            before the page opens (the footer's silent beat above). */}
+        <div className="relative min-h-[100dvh] w-full" aria-hidden="true" />
 
         {/* FOOTER SENZA BG-WHITE 
           Ora è trasparente. Lo sfondo bianco che vediamo è il div animato dietro il Canvas.

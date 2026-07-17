@@ -172,6 +172,58 @@ a {
   will-change: transform, opacity;
 }
 
+/* ── Narrative statements (director beats) ───────────────────────── */
+
+/* Shared statement typography — used by the fixed layer behind the canvas
+   and by the reduced-motion static fallback inside the runways. Three short
+   sentences, sized to support rhythm between beats — never to compete with
+   the projects they separate. */
+.statement-type {
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 7vw, 7.5rem);
+  font-weight: 400;
+  line-height: 1.06;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-ink);
+  overflow-wrap: break-word;
+}
+
+/* Hidden until its beat activates it (JS toggles inline visibility);
+   prevents any pre-hydration flash of all three stacked statements. */
+.statement {
+  visibility: hidden;
+}
+
+/* Uncovered center-outward by a scroll-driven clip-path wipe, out of the
+   negative space the world opens — never faded, never slid. */
+.statement__line {
+  display: block;
+  will-change: clip-path;
+}
+
+/* Static fallback lives in the runway flow; only reduced motion shows it. */
+.bridge__static {
+  display: none;
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bridge__static {
+    display: block;
+  }
+
+  .statement-layer {
+    display: none;
+  }
+}
+
+/* ── Hero scroll cue ─────────────────────────────────────────────── */
+
+.hero__cue-line {
+  will-change: transform;
+}
+
 /* ── Work / case studies ─────────────────────────────────────────── */
 
 .work {
@@ -183,11 +235,18 @@ a {
      it doesn't silently out-cascade those Tailwind utility classes. */
 }
 
-.work__index {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-bottom: var(--space-6);
-  border-bottom: var(--border-heavy);
+/* Project reveals: video-first, no card. The label is an overlay caption on
+   the video itself (mono index line + name), staged in by clip-path — same
+   uncover grammar as the statement bridges and the profile's own text. */
+.project__eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.project__label,
+.project__desc {
+  will-change: clip-path;
 }
 
