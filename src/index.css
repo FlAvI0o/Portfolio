@@ -15,6 +15,7 @@
   /* Brand button tokens (BrandButton.tsx) */
   --color-df-dark: #111111;
   --color-df-primary: #9333ea;
+  --color-df-obsidian: #050404;
   --ease-df-heavy: cubic-bezier(0.16, 1, 0.3, 1);
 
   --ease-brutal: cubic-bezier(0.16, 1, 0.3, 1);
@@ -249,4 +250,252 @@ a {
 .project__desc {
   will-change: clip-path;
 }
+
+/* ── Project intake (application state) ─────────────────────────── */
+
+html.intake-active,
+html.intake-active body {
+  overflow: hidden;
+}
+
+.intake-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  /* Transparent — the WebGL world is the atmosphere behind the type. */
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.intake {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100dvh;
+  padding: clamp(1.25rem, 3vw, 2.5rem) clamp(1.5rem, 4vw, 4rem)
+    clamp(2rem, 5vw, 3.5rem);
+  color: var(--color-ink);
+}
+
+.intake--inert {
+  pointer-events: none;
+}
+
+.intake__chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: clamp(1.5rem, 4vh, 2.75rem);
+}
+
+.intake__eyebrow {
+  margin: 0;
+}
+
+.intake__close {
+  margin: 0;
+  padding: 0.4rem 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-muted);
+  transition: color 0.2s ease;
+}
+
+.intake__close:hover,
+.intake__close:focus-visible {
+  color: var(--color-ink);
+  outline: none;
+}
+
+.intake__close:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.intake__progress {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: clamp(2rem, 6vh, 4rem);
+  max-width: 16rem;
+}
+
+.intake__progress-seg {
+  flex: 1;
+  height: 2px;
+  background: color-mix(in srgb, var(--color-ink) 12%, transparent);
+  transition: background 0.35s ease;
+}
+
+.intake__progress-seg.is-active {
+  background: var(--color-ink);
+}
+
+.intake__stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 42rem;
+  width: 100%;
+  margin-inline: auto;
+  clip-path: inset(0% 0% 0% 0%);
+}
+
+.intake__title {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-display);
+  font-size: clamp(2.75rem, 8vw, 6.5rem);
+  font-weight: 400;
+  line-height: 0.95;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-ink);
+}
+
+.intake__hint {
+  margin: 0 0 clamp(1.5rem, 3vh, 2.25rem);
+}
+
+.intake__body {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(1.25rem, 3vh, 2rem);
+}
+
+.intake__field {
+  width: 100%;
+  margin: 0;
+  padding: 1rem 0;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-ink) 28%, transparent);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: clamp(1rem, 2.2vw, 1.25rem);
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.intake__field--single {
+  padding-block: 0.85rem;
+}
+
+.intake__field::placeholder {
+  color: color-mix(in srgb, var(--color-ink) 35%, transparent);
+}
+
+.intake__field:focus-visible {
+  border-bottom-color: var(--color-ink);
+}
+
+.intake__copy {
+  margin: 0;
+  max-width: 36ch;
+  font-family: var(--font-mono);
+  font-size: clamp(1rem, 2vw, 1.2rem);
+  line-height: 1.55;
+  color: var(--color-ink);
+}
+
+.intake__copy--muted {
+  color: var(--color-muted);
+}
+
+.intake__options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.intake__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.9rem 0.25rem;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-ink) 12%, transparent);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  transition: background 0.2s ease;
+}
+
+.intake__option:hover,
+.intake__option:focus-visible,
+.intake__option.is-active {
+  outline: none;
+  background: color-mix(in srgb, var(--color-ink) 4%, transparent);
+}
+
+.intake__option-key {
+  flex: none;
+  width: 1.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  color: var(--color-muted);
+  padding-top: 0.2rem;
+}
+
+.intake__option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.intake__option-label {
+  font-family: var(--font-mono);
+  font-size: clamp(1rem, 2vw, 1.2rem);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.intake__option-hint {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.intake__actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.intake__kbd {
+  opacity: 0.55;
+}
+
+.intake__error {
+  margin: 1rem 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: #8a1f1f;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intake__progress-seg {
+    transition: none;
+  }
+}
+
 

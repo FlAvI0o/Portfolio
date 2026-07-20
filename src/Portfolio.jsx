@@ -1,11 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import Lenis from 'lenis';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useGSAP } from '@gsap/react';
 import BackgroundScene from './components/BackgroundScene.jsx';
-import { BrandButton } from './components/BrandButton';
+import { CornerButton } from './components/CornerButton';
+import IntakeExperience from './components/IntakeExperience.jsx';
 import { useMediaQuery } from './hooks/useMediaQuery.js';
 import {
   cardRevealAlpha,
@@ -15,6 +16,12 @@ import {
   smoothstep,
 } from './systems/cubeMorph.js';
 import { BRIDGE_BEAT, beatExit, statementWipe } from './systems/director.js';
+import {
+  INTAKE_DURATION,
+  intakeEase,
+  intakePresence,
+  portfolioPresence,
+} from './systems/intake.js';
 import { createScrollResistance } from './systems/resistance.js';
 import 'lenis/dist/lenis.css';
 
@@ -263,8 +270,107 @@ export default function Portfolio() {
   // statement bridges, the two moments and the finale — the WebGL scene
   // reads per frame to derive calm / compression / energy and the camera lean.
   const beatsRef = useRef([]);
+  // Intake collapse progress shared with BackgroundScene (0 browse → 1 workspace).
+  const intakeProgressRef = useRef(0);
+  const reconstructProgressRef = useRef(0);
+  const lenisRef = useRef(null);
+  const domLayerRef = useRef(null);
+  const intakeShellRef = useRef(null);
+  const intakeTweenRef = useRef(null);
+  const savedScrollYRef = useRef(0);
+  const [intakeOpen, setIntakeOpen] = useState(false);
+  const [intakeMounted, setIntakeMounted] = useState(false);
+  const intakeOpenRef = useRef(false);
+  intakeOpenRef.current = intakeOpen;
 
   const prefersReducedMotion = useMediaQuery(MQ_REDUCED_MOTION);
+  const reducedMotionRef = useRef(prefersReducedMotion);
+  reducedMotionRef.current = prefersReducedMotion;
+
+  const applyIntakeVisuals = (t) => {
+    const dom = domLayerRef.current;
+    const shell = intakeShellRef.current;
+    const presence = portfolioPresence(t);
+    const intakeAlpha = intakePresence(t);
+
+    if (dom) {
+      gsap.set(dom, {
+        autoAlpha: Math.max(presence, 0.001),
+        scale: 1 - intakeEase(t) * 0.04,
+        y: intakeEase(t) * -28,
+        filter: t > 0.02 ? `blur(${intakeEase(t) * 10}px)` : 'none',
+        pointerEvents: t > 0.55 ? 'none' : 'auto',
+      });
+    }
+    if (shell) {
+      gsap.set(shell, {
+        autoAlpha: intakeAlpha,
+        pointerEvents: intakeAlpha > 0.4 ? 'auto' : 'none',
+      });
+    }
+  };
+
+  const openIntake = () => {
+    if (intakeOpenRef.current || intakeTweenRef.current) return;
+
+    savedScrollYRef.current = window.scrollY;
+    setIntakeMounted(true);
+    setIntakeOpen(true);
+    document.documentElement.classList.add('intake-active');
+    lenisRef.current?.stop();
+
+    const reduce = reducedMotionRef.current;
+    const state = { t: intakeProgressRef.current };
+    const duration = reduce ? 0.01 : INTAKE_DURATION;
+
+    intakeTweenRef.current?.kill();
+    intakeTweenRef.current = gsap.to(state, {
+      t: 1,
+      duration,
+      ease: reduce ? 'none' : 'power2.inOut',
+      onUpdate: () => {
+        intakeProgressRef.current = state.t;
+        applyIntakeVisuals(state.t);
+      },
+      onComplete: () => {
+        intakeProgressRef.current = 1;
+        applyIntakeVisuals(1);
+        intakeTweenRef.current = null;
+      },
+    });
+  };
+
+  const closeIntake = () => {
+    if (intakeProgressRef.current < 0.01 && !intakeOpenRef.current) return;
+    if (intakeTweenRef.current) return;
+
+    reconstructProgressRef.current = 0;
+    setIntakeOpen(false);
+
+    const reduce = reducedMotionRef.current;
+    const state = { t: intakeProgressRef.current };
+    const duration = reduce ? 0.01 : INTAKE_DURATION * 0.9;
+
+    intakeTweenRef.current = gsap.to(state, {
+      t: 0,
+      duration,
+      ease: reduce ? 'none' : 'power2.inOut',
+      onUpdate: () => {
+        intakeProgressRef.current = state.t;
+        applyIntakeVisuals(state.t);
+      },
+      onComplete: () => {
+        intakeProgressRef.current = 0;
+        applyIntakeVisuals(0);
+        intakeTweenRef.current = null;
+        setIntakeMounted(false);
+        document.documentElement.classList.remove('intake-active');
+        lenisRef.current?.start();
+        window.scrollTo(0, savedScrollYRef.current);
+        ScrollTrigger.refresh();
+      },
+    });
+  };
 
   // The profile photo is very high resolution and stays at opacity 0 until the
   // scroll trigger reveals it, so the browser would defer its decode until that
@@ -351,6 +457,7 @@ export default function Portfolio() {
         smoothWheel: true,
         virtualScroll: resistance.virtualScroll,
       });
+      lenisRef.current = lenis;
 
       // Lenis scrolls the window natively, so ScrollTrigger needs no scrollerProxy —
       // keeping them in sync only requires the update hook + shared ticker.
@@ -376,6 +483,7 @@ export default function Portfolio() {
         gsap.ticker.remove(onTick);
         gsap.ticker.lagSmoothing(500, 33);
         lenis.destroy();
+        lenisRef.current = null;
         html.classList.remove('lenis', 'lenis-smooth', 'lenis-scrolling');
         scrollProgressRef.current = 0;
       };
@@ -1345,11 +1453,13 @@ export default function Portfolio() {
             footerProgressRef={footerProgressRef}
             morphTargetsRef={morphTargetsRef}
             beatsRef={beatsRef}
+            intakeProgressRef={intakeProgressRef}
+            reconstructProgressRef={reconstructProgressRef}
           />
         </Canvas>
       </div>
 
-      <div className="dom-layer w-full overflow-x-clip">
+      <div ref={domLayerRef} className="dom-layer w-full overflow-x-clip">
         <header
           ref={heroRef}
           className="hero relative flex min-h-screen w-full max-w-full flex-col items-start justify-center overflow-clip px-[clamp(1.5rem,4vw,4rem)]"
@@ -1466,24 +1576,25 @@ export default function Portfolio() {
         */}
         <footer
           ref={footerRef}
-          className="relative flex min-h-[100dvh] w-full max-w-full shrink-0 flex-col justify-between px-[clamp(1.5rem,4vw,4rem)] py-[clamp(2rem,5vw,4rem)] font-sans text-black"
+          className="relative flex min-h-[100dvh] max-h-[100dvh] w-full max-w-full shrink-0 flex-col justify-between overflow-hidden px-[clamp(1.5rem,4vw,4rem)] py-[clamp(1.5rem,3.5vh,3.5rem)] font-sans text-black"
         >
-          <div className="flex w-full flex-col gap-[clamp(2rem,5vw,4rem)] xl:flex-row xl:items-start xl:justify-between">
-            <div className="flex w-full flex-col items-start gap-[clamp(1.5rem,3vw,2.5rem)] xl:w-[58%] xl:shrink-0">
-              <h2 className="footer__headline w-full max-w-full text-[clamp(2.5rem,7vw,7rem)] font-bold uppercase leading-[0.9] tracking-[0.02em]">
-                HOW ABOUT WE DO A THING OR TWO. TOGETHER
+          {/* Strict 12-column grid on desktop: headline owns cols 1–7, the nav
+            owns cols 8–12. Both start on the same row so their top edges are
+            hard-locked to one another — nothing floats. */}
+          <div className="flex w-full flex-col gap-[clamp(2rem,5vw,4rem)] xl:grid xl:grid-cols-12 xl:items-start xl:gap-x-[clamp(1rem,3vw,2rem)] xl:gap-y-0">
+            <div className="flex w-full flex-col items-start gap-[clamp(1.5rem,3vw,2.5rem)] xl:col-span-7">
+              {/* Big and bold, but one step below the wordmark: the name at
+                the bottom stays the single anchor of the page. The min(vw,vh)
+                cap keeps it from overflowing short screens. */}
+              <h2 className="footer__headline w-full max-w-[13ch] text-[clamp(2.5rem,min(6vw,10vh),6rem)] font-bold uppercase leading-[0.92] tracking-[0.01em]">
+                HOW ABOUT WE DO A THING OR TWO.
               </h2>
-              <BrandButton
-                className="footer__cta"
-                onClick={() => {
-                  window.location.href = 'mailto:flaviodonnini07@gmail.com';
-                }}
-              >
+              <CornerButton className="footer__cta" onClick={openIntake}>
                 Get in touch
-              </BrandButton>
+              </CornerButton>
             </div>
 
-            <div className="grid w-full min-w-0 grid-cols-1 gap-x-[clamp(1rem,3vw,2rem)] gap-y-[clamp(1.5rem,4vw,2.5rem)] md:grid-cols-2 xl:mt-0 xl:w-[38%] xl:grid-cols-4">
+            <div className="grid w-full min-w-0 grid-cols-1 gap-x-[clamp(1rem,3vw,2rem)] gap-y-[clamp(1.5rem,4vw,2.5rem)] md:grid-cols-2 xl:col-span-5 xl:mt-0 xl:grid-cols-4">
               {FOOTER_NAV.map((column) => (
                 <div key={column.title} className="flex min-w-0 flex-col gap-4">
                   <span className="text-xs uppercase tracking-widest text-neutral-400">
@@ -1512,7 +1623,7 @@ export default function Portfolio() {
             </div>
           </div>
 
-          <div className="mt-[clamp(3rem,8vw,8rem)] flex w-full flex-col items-start gap-[clamp(1.5rem,4vw,2.5rem)] xl:flex-row xl:items-end xl:justify-between">
+          <div className="mt-[clamp(1.5rem,4vh,4rem)] flex w-full flex-col items-start gap-[clamp(1.5rem,4vw,2.5rem)] xl:flex-row xl:items-end xl:justify-between">
             {/* AI interaction card — a morph destination: the hero cube lands
               here and becomes this card at the end of the page. */}
             <div className="footer-ai-card shrink-0 rounded-3xl border border-neutral-300 bg-white/70 p-6 shadow-2xl backdrop-blur-xl">
@@ -1526,13 +1637,31 @@ export default function Portfolio() {
               </div>
             </div>
 
-            {/* 10.5vw (instead of the clipped 14vw nowrap) keeps the wordmark on a
-              single unclipped line across desktop widths; small screens may wrap. */}
-            <p className="footer__logo w-full min-w-0 max-w-full text-left text-[clamp(2.75rem,10.5vw,13rem)] font-bold uppercase leading-none tracking-[0.02em] xl:text-right">
+            {/* The anchor of the whole page: bigger than everything else,
+              free to wrap onto two right-aligned lines on desktop. The vh cap
+              keeps the two-line block inside a single viewport. */}
+            <p className="footer__logo w-full min-w-0 max-w-full text-left text-[clamp(2.75rem,min(13.5vw,18vh),15rem)] font-bold uppercase leading-[0.9] tracking-[0.01em] xl:text-right">
               FLAVIO DONNINI.
             </p>
           </div>
         </footer>
+      </div>
+
+      {/* Project intake — application state, not a modal/page. The WebGL
+          scene stays mounted and participates via intakeProgressRef. */}
+      <div
+        ref={intakeShellRef}
+        className="intake-shell"
+        aria-hidden={!intakeOpen}
+      >
+        {intakeMounted ? (
+          <IntakeExperience
+            active={intakeOpen}
+            reducedMotion={prefersReducedMotion}
+            onClose={closeIntake}
+            reconstructProgressRef={reconstructProgressRef}
+          />
+        ) : null}
       </div>
     </div>
   );

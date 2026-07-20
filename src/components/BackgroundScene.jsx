@@ -15,6 +15,15 @@ import {
   writeRoundedRect,
 } from '../systems/cubeMorph.js';
 import { calmFromRanges } from '../systems/director.js';
+import {
+  INTAKE_CAMERA_DOLLY,
+  INTAKE_CAMERA_FOV_TIGHTEN,
+  INTAKE_CLUSTER_PULL_Z,
+  INTAKE_CLUSTER_SCALE,
+  INTAKE_COMPRESSION_SCALE,
+  reconstructCalm,
+  reconstructCompression,
+} from '../systems/intake.js';
 
 const DESKTOP_COUNT = 800;
 const MOBILE_COUNT = 100;
@@ -251,6 +260,10 @@ export default function BackgroundScene({
   footerProgressRef,
   morphTargetsRef,
   beatsRef,
+  // Shared with Portfolio: collapse (0→1) into intake, plus optional
+  // reconstruct progress after a successful submission.
+  intakeProgressRef,
+  reconstructProgressRef,
 }) {
   const groupRef = useRef(null);
   const clusterLinesRef = useRef(null);
@@ -273,6 +286,9 @@ export default function BackgroundScene({
   // a handoff between two beats' lean patterns eases rather than snaps.
   const leanPushRef = useRef(0);
   const leanReframeRef = useRef(0);
+  // Intake collapse / reconstruct — damped so open/close never pops the world.
+  const smoothIntakeRef = useRef(0);
+  const smoothReconstructRef = useRef(0);
 
   const isLightweight = useMediaQuery(MOBILE_QUERY);
   const instanceCount = isLightweight ? MOBILE_COUNT : DESKTOP_COUNT;
@@ -440,16 +456,50 @@ export default function BackgroundScene({
       delta,
     );
 
-    const calm = smoothCalmRef.current;
-    const compress = smoothCompressionRef.current;
-    const energy = smoothEnergyRef.current;
+    // Intake finale: the portfolio collapses into the contact workspace.
+    // One shared progress drives calm, compression, cluster convergence and
+    // camera settle — same director language, stronger than any scroll beat.
+    const intakeTarget = intakeProgressRef?.current ?? 0;
+    const reconstructTarget = reconstructProgressRef?.current ?? 0;
+    smoothIntakeRef.current = THREE.MathUtils.damp(
+      smoothIntakeRef.current,
+      intakeTarget,
+      4.2,
+      delta,
+    );
+    smoothReconstructRef.current = THREE.MathUtils.damp(
+      smoothReconstructRef.current,
+      reconstructTarget,
+      2.8,
+      delta,
+    );
+    const intakeT = smoothIntakeRef.current;
+    const reconstructR = smoothReconstructRef.current;
+    // While intake is open, reconstruct softens the hold so the world can
+    // gently return behind the success message without leaving the workspace.
+    const intakeCalm =
+      intakeT > 0.001
+        ? THREE.MathUtils.lerp(intakeT, reconstructCalm(reconstructR), reconstructR)
+        : 0;
+    const intakeCompress =
+      intakeT > 0.001
+        ? THREE.MathUtils.lerp(
+            intakeT * INTAKE_COMPRESSION_SCALE,
+            reconstructCompression(reconstructR),
+            reconstructR,
+          )
+        : 0;
+
+    const calm = Math.max(smoothCalmRef.current, intakeCalm);
+    const compress = Math.max(smoothCompressionRef.current, intakeCompress);
+    const energy = smoothEnergyRef.current * (1 - intakeT);
     // One multiplier for every ambient amplitude: silence before the reveal,
     // overshoot after it. Contrast is the message.
     const motionScale = (1 - CALM_MOTION_CUT * calm) * (1 + energy * 0.9);
     // Ambient amplitude never bottoms out — a hold is quieter than a
-    // transition, never silent. This is what keeps the world breathing
-    // through the stillest part of a pin.
-    const ambientAmp = AMBIENT_CALM_FLOOR + (1 - AMBIENT_CALM_FLOOR) * (1 - calm);
+    // transition, never silent. Intake pushes further toward stillness.
+    const ambientAmp =
+      (AMBIENT_CALM_FLOOR + (1 - AMBIENT_CALM_FLOOR) * (1 - calm)) * (1 - intakeT * 0.55);
     const breathe = state.clock.elapsedTime;
 
     // Raw scroll progress arrives in discrete per-tick steps, which reads as
@@ -506,12 +556,17 @@ export default function BackgroundScene({
 
     camera.position.z =
       CAMERA_Z -
-      calm * CAMERA_DOLLY +
+      calm * CAMERA_DOLLY -
+      intakeT * INTAKE_CAMERA_DOLLY * (1 - reconstructR * 0.45) +
       energy * 0.12 -
       journeyPush -
       leanPushRef.current +
       ambientCameraZ;
-    camera.fov = CAMERA_FOV - calm * CAMERA_FOV_TIGHTEN - leanReframeRef.current;
+    camera.fov =
+      CAMERA_FOV -
+      calm * CAMERA_FOV_TIGHTEN -
+      intakeT * INTAKE_CAMERA_FOV_TIGHTEN * (1 - reconstructR * 0.4) -
+      leanReframeRef.current;
     camera.updateProjectionMatrix();
 
     smoothFooterRef.current = THREE.MathUtils.damp(
@@ -560,15 +615,31 @@ export default function BackgroundScene({
     const ambientPosX = Math.cos(breathe * 0.072) * AMBIENT_CLUSTER_POS_X * ambientAmp;
 
     const clusterRotBlend = 0.12 + preFooter * 0.88;
+    // Intake converges the cluster: scale collapses, cubes pull toward the
+    // frame center, motion calms. Reconstruct eases some of that back.
+    const converge = intakeT * (1 - reconstructR * 0.65);
+    const intakeScale = THREE.MathUtils.lerp(1, INTAKE_CLUSTER_SCALE, converge);
+
     group.rotation.y = scrollT * Math.PI * 0.38 * clusterRotBlend * motionScale + ambientRotY;
     group.rotation.x =
       (scrollT * 0.2 - 0.06) * (0.18 + preFooter * 0.82) * motionScale + ambientRotX;
     group.position.y =
-      scrollT * 0.52 * motionScale - 0.18 - footerEased * 0.42 + compress * 0.3 + ambientPosY;
+      scrollT * 0.52 * motionScale -
+      0.18 -
+      footerEased * 0.42 +
+      compress * 0.3 +
+      ambientPosY -
+      converge * 0.35;
     group.position.x =
-      (scrollT - 0.5) * 0.32 * (0.25 + preFooter * 0.75) * motionScale + ambientPosX;
-    group.position.z = scrollT * -2 - footerEased * 3.2 - compress * 2.6 + energy * 0.5;
-    group.scale.setScalar((1 - flightT * 0.08) * (1 - compress * 0.1));
+      (scrollT - 0.5) * 0.32 * (0.25 + preFooter * 0.75) * motionScale * (1 - converge) +
+      ambientPosX * (1 - converge);
+    group.position.z =
+      scrollT * -2 -
+      footerEased * 3.2 -
+      compress * 2.6 +
+      energy * 0.5 +
+      converge * INTAKE_CLUSTER_PULL_Z;
+    group.scale.setScalar((1 - flightT * 0.08) * (1 - compress * 0.1) * intakeScale);
     clusterMaterial.opacity =
       (1 - easeOutCubic(footerReveal) * 0.92) *
       CANVAS_BG_BLEND *
@@ -577,7 +648,8 @@ export default function BackgroundScene({
       // "Lighting continues changing" — a faint, ever-present opacity
       // breath standing in for illumination shifts in an unlit wireframe
       // scene; same ambient floor as the rest of this layer.
-      (1 + Math.sin(breathe * 0.09 + 2.1) * AMBIENT_CLUSTER_OPACITY * ambientAmp);
+      (1 + Math.sin(breathe * 0.09 + 2.1) * AMBIENT_CLUSTER_OPACITY * ambientAmp) *
+      (1 - converge * 0.2);
 
     // ── Hero cube, free-flight base transform (scroll + footer driven).
     // Calm slows its tumble too — by the time a reveal begins the cube is
@@ -603,7 +675,7 @@ export default function BackgroundScene({
     const basePosZ = -footerEased * 1.2;
     const baseScale = 0.5;
 
-    const baseOpacity = (0.72 + preFooter * 0.28) * CANVAS_BG_BLEND;
+    const baseOpacity = (0.72 + preFooter * 0.28) * CANVAS_BG_BLEND * (1 - intakeT * 0.85);
 
     if (m <= 0.0001) {
       hero.rotation.set(baseRotX, baseRotY, baseRotZ);
